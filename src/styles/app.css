@@ -164,9 +164,20 @@ a { color: var(--accent); text-decoration: none; }
 /* ---------- Map / Mindmap / Tree ---------- */
 .map-stage { width: 100%; height: 100%; position: relative; overflow: hidden; touch-action: none; cursor: grab; }
 .map-stage:active { cursor: grabbing; }
-.map-toolbar { position: absolute; top: 12px; left: 12px; z-index: 10; display: flex; gap: 6px; background: rgba(20,30,24,.8); backdrop-filter: blur(8px); padding: 6px; border-radius: 12px; border: 1px solid var(--border); }
-.map-toolbar .tab { font-size: 12px; padding: 6px 10px; }
-.level-filter { position: absolute; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px; background: rgba(20,30,24,.8); backdrop-filter: blur(8px); padding: 6px; border-radius: 12px; border: 1px solid var(--border); }
+.map-ui { z-index: 12; }
+/* barra unica in alto: modalita' a sx, livelli a dx, + in fondo */
+.map-bar {
+  position: absolute; top: 10px; left: 10px; right: 10px; z-index: 12;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: rgba(20,30,24,.82); backdrop-filter: blur(10px);
+  padding: 6px 8px; border-radius: 14px; border: 1px solid var(--border);
+}
+.map-bar .tab { font-size: 12px; padding: 6px 10px; }
+.map-modes { display: flex; gap: 4px; }
+.map-spacer { flex: 1 1 auto; min-width: 8px; }
+.map-levels { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.map-lbl { color: var(--text-dim); font-size: 12px; }
+.map-add { width: 34px; height: 34px; }
 .lvl-chip { padding: 5px 10px; border-radius: 999px; font-size: 12px; background: var(--panel); border: 1px solid var(--border); color: var(--text-dim); }
 .lvl-chip.on { background: var(--green-deep); color: #fff; border-color: var(--green-bright); }
 .node {
@@ -216,15 +227,26 @@ a { color: var(--accent); text-decoration: none; }
   background: rgba(20,30,24,.8); backdrop-filter: blur(8px);
   padding: 6px; border-radius: 12px; border: 1px solid var(--border);
 }
+.map-zoom { position: absolute; right: 12px; bottom: 12px; left: auto; }
 .map-zoom .iconbtn { width: 36px; height: 36px; }
-.map-toolbar { flex-wrap: wrap; max-width: calc(100% - 24px); }
+
+.map-hint {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 11;
+  background: rgba(20,30,24,.8); backdrop-filter: blur(8px); border: 1px solid var(--border);
+  border-radius: 999px; padding: 6px 14px; font-size: 11.5px; color: var(--text-dim); pointer-events: none; white-space: nowrap;
+}
+
+/* stati drag dei nodi */
+.node { pointer-events: auto; touch-action: none; user-select: none; }
+.node.grabbing { cursor: grabbing; border-color: var(--green-bright); box-shadow: 0 0 0 3px rgba(52,210,126,.2); }
+.node.drop-on { border-color: var(--green-bright); background: var(--panel-2); box-shadow: 0 0 0 4px rgba(52,210,126,.3); }
 
 @media (max-width: 640px) {
-  .map-toolbar { top: 8px; left: 8px; padding: 4px; gap: 3px; }
-  .map-toolbar .tab { font-size: 11px; padding: 5px 8px; }
-  .level-filter { top: 8px; right: 8px; padding: 4px; gap: 3px; }
-  .level-filter .lvl-chip { padding: 4px 7px; font-size: 11px; }
-  .map-zoom { left: 8px; bottom: 8px; }
+  .map-bar { gap: 6px; padding: 5px 6px; }
+  .map-bar .tab { font-size: 11px; padding: 5px 7px; }
+  .map-levels .lvl-chip { padding: 4px 7px; font-size: 11px; }
+  .map-zoom { right: 8px; bottom: 8px; }
+  .map-hint { display: none; }
 }
 
 /* ---------- Levels: guida + card ---------- */
@@ -238,12 +260,44 @@ a { color: var(--accent); text-decoration: none; }
 .level-card.picked { outline: 2px solid var(--green-bright); box-shadow: 0 0 0 4px rgba(52,210,126,.15); }
 .level-card.targetable { border-style: dashed; border-color: var(--green-deep); }
 .level-card .open-mini {
-  position: absolute; right: 8px; bottom: 8px; font-size: 11px; color: var(--accent);
-  background: transparent; border: none; padding: 2px 4px;
+  position: absolute; right: 8px; bottom: 8px; width: 28px; height: 28px; font-size: 13px;
 }
-.level-card .open-mini:hover { text-decoration: underline; }
 .root-drop {
   margin-top: 16px; padding: 18px; border: 1px dashed var(--border); border-radius: 12px;
   color: var(--text-dim); text-align: center; cursor: pointer; transition: .15s; font-size: 13px;
 }
 .root-drop.targetable { border-color: var(--green-bright); color: var(--green-bright); background: rgba(52,210,126,.06); }
+
+/* ---------- Tema picker ---------- */
+.theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0 4px; }
+.theme-opt {
+  display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+  color: var(--text); font-size: 13px; font-weight: 600; transition: .15s;
+}
+.theme-opt:hover { border-color: var(--green); }
+.theme-opt.active { border-color: var(--green-bright); box-shadow: 0 0 0 3px rgba(52,210,126,.15); }
+.theme-swatches { display: flex; gap: 5px; }
+.theme-swatches span { width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,.1); }
+
+/* ---------- Menu import label ---------- */
+.menu-import {
+  text-align: left; padding: 10px 12px; border-radius: 8px; background: var(--bg-2); color: var(--text);
+  border: 1px solid var(--border); cursor: pointer; display: block; font-size: 14px;
+}
+.menu-import:hover { border-color: var(--green); }
+
+/* ---------- Anteprima vista ---------- */
+.preview-modal { max-width: 520px; }
+.preview-body {
+  max-height: 50vh; overflow: auto; background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px; margin: 6px 0 4px;
+}
+.preview-line { line-height: 1.6; white-space: pre-wrap; color: var(--text); font-size: 14px; margin: 2px 0; }
+
+/* ---------- Hint link nell'editor ---------- */
+.link-hint {
+  background: var(--bg-2); border: 1px solid var(--border); border-left: 3px solid var(--green-bright);
+  border-radius: 10px; padding: 9px 12px; margin-bottom: 10px; font-size: 12.5px; color: var(--text-dim); line-height: 1.5;
+}
+.link-hint code { background: var(--bg); padding: 1px 5px; border-radius: 4px; color: var(--green-bright); }

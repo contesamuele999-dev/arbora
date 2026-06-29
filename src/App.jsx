@@ -8,6 +8,8 @@ import Pipeline from './views/Pipeline.jsx'
 import Levels from './views/Levels.jsx'
 import Pomodoro from './views/Pomodoro.jsx'
 import { Privacy, Terms } from './pages/Legal.jsx'
+import { THEMES, applyTheme, loadTheme } from './lib/themes.js'
+import { exportBackup, importBackup } from './lib/backup.js'
 
 const TABS = [
   { id: 'mondi', label: 'Mondi' },
@@ -30,6 +32,10 @@ export default function App() {
   const [legal, setLegal] = useState(null)
   const [menu, setMenu] = useState(false)
   const [prompt, setPrompt] = useState(null)
+  const [theme, setTheme] = useState('foresta')
+  const [themeOpen, setThemeOpen] = useState(false)
+  const [preview, setPreview] = useState(null)
+  const [busy, setBusy] = useState('')
 
   const reload = useCallback(async () => {
     const vt = await store.list('vite')
@@ -37,13 +43,19 @@ export default function App() {
     if (vt.length && !vitaSel) setVitaSel(vt[0])
   }, [vitaSel])
 
+  useEffect(() => { setTheme(loadTheme()) }, [])
   useEffect(() => { if (user) reload() }, [user])
 
   useEffect(() => {
     if (!vitaSel) return
+    // se la visione selezionata appartiene a un'altra vita, deselezionala subito
+    setVisioneSel(prev => (prev && prev.vita_id !== vitaSel.id) ? null : prev)
     store.list('visioni', { vita_id: vitaSel.id }).then(vs => {
       setVisioni(vs)
-      if (vs.length && (!visioneSel || visioneSel.vita_id !== vitaSel.id)) setVisioneSel(vs[0])
+      setVisioneSel(prev => {
+        if (prev && vs.some(x => x.id === prev.id)) return prev   // ancora valida
+        return vs.length ? vs[0] : null                            // altrimenti prima o nulla
+      })
     })
   }, [vitaSel])
 
@@ -119,6 +131,24 @@ export default function App() {
     setVistaAperta(target)
   }
 
+  const chooseTheme = (id) => { applyTheme(id); setTheme(id); }
+
+  const doExport = async () => {
+    setBusy('export'); 
+    try { await exportBackup() } finally { setBusy(''); setMenu(false) }
+  }
+  const doImport = async (file) => {
+    setBusy('import')
+    try {
+      await importBackup(file)
+      await reload()
+      setVitaSel(null); setVisioneSel(null)
+      alert('Backup importato con successo.')
+    } catch (e) {
+      alert('Errore import: ' + (e?.message || e))
+    } finally { setBusy(''); setMenu(false) }
+  }
+
   const reparent = async (childId, parentId) => {
     const parent = viste.find(v => v.id === parentId)
     const newLevel = parent ? (parent.livello || 0) + 1 : 0
@@ -184,7 +214,7 @@ export default function App() {
           <Worlds vite={vite} visioni={visioni} viste={viste}
             vitaSel={vitaSel} setVitaSel={setVitaSel}
             visioneSel={visioneSel} setVisioneSel={setVisioneSel}
-            onOpenVista={setVistaAperta} addVita={addVita} addVisione={addVisione} addVista={addVista}
+            onOpenVista={setVistaAperta} onPreviewVista={setPreview} addVita={addVita} addVisione={addVisione} addVista={addVista}
             renameVita={renameVita} renameVisione={renameVisione} />
         )}
         {tab === 'pipeline' && (
@@ -192,7 +222,7 @@ export default function App() {
             : <Empty msg="Seleziona o crea una visione nei Mondi." />
         )}
         {tab === 'mappa' && (
-          viste.length ? <MapView viste={viste} links={links} onOpen={setVistaAperta} onAddVista={addVista} />
+          viste.length ? <MapView viste={viste} links={links} onOpen={setVistaAperta} onAddVista={addVista} onReparent={reparent} />
             : <Empty msg="Crea qualche vista per vedere la mappa." />
         )}
         {tab === 'livelli' && (
@@ -205,12 +235,59 @@ export default function App() {
 
       {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
 
+      {themeOpen && (
+        <div className="modal-bg" onClick={() => setThemeOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3>Tema dell'app</h3>
+            <div className="theme-grid">
+              {Object.entries(THEMES).map(([id, t]) => (
+                <button key={id} className={'theme-opt' + (theme===id ? ' active' : '')}
+                  onClick={() => chooseTheme(id)}>
+                  <div className="theme-swatches">
+                    <span style={{background:t.vars['--bg']}} />
+                    <span style={{background:t.vars['--green-bright']}} />
+                    <span style={{background:t.vars['--panel-2']}} />
+                  </div>
+                  <span>{t.emoji} {t.nome}</span>
+                </button>
+              ))}
+            </div>
+            <div className="row"><button className="btn" onClick={() => setThemeOpen(false)}>Fatto</button></div>
+          </div>
+        </div>
+      )}
+
+      {preview && (
+        <div className="modal-bg" onClick={() => setPreview(null)}>
+          <div className="modal preview-modal" onClick={e => e.stopPropagation()}>
+            <h3>{preview.titolo || 'Senza titolo'}</h3>
+            <div className="preview-body">
+              {(preview.blocchi || []).map(b => (
+                <div key={b.id} className="preview-line">{b.text || ''}</div>
+              ))}
+              {!(preview.blocchi || []).length && <div style={{color:'var(--text-dim)'}}>Vista vuota.</div>}
+            </div>
+            <div className="row">
+              <button className="btn ghost" onClick={() => setPreview(null)}>Chiudi</button>
+              <button className="btn" onClick={() => { const p = preview; setPreview(null); setVistaAperta(p) }}>Apri e modifica ✎</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {menu && (
         <div className="modal-bg" onClick={() => setMenu(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h3>Menu</h3>
             <div className="menu-list">
               <button onClick={() => { addVista(true); setMenu(false) }}>＋ Crea template</button>
+              <button onClick={() => { setThemeOpen(true) }}>🎨 Tema dell'app</button>
+              <button onClick={doExport} disabled={busy==='export'}>⬇ Esporta backup (JSON)</button>
+              <label className="menu-import">
+                ⬆ Importa backup (JSON)
+                <input type="file" accept="application/json" style={{display:'none'}}
+                  onChange={e => e.target.files[0] && doImport(e.target.files[0])} />
+              </label>
               <button onClick={() => { setLegal('privacy'); setMenu(false) }}>Privacy</button>
               <button onClick={() => { setLegal('terms'); setMenu(false) }}>Termini e condizioni</button>
               {!isDemo && <button onClick={() => { signOut(); setMenu(false) }}>Esci ({user.email})</button>}
@@ -225,7 +302,7 @@ export default function App() {
   )
 }
 
-function Worlds({ vite, visioni, viste, vitaSel, setVitaSel, visioneSel, setVisioneSel, onOpenVista, addVita, addVisione, addVista, renameVita, renameVisione }) {
+function Worlds({ vite, visioni, viste, vitaSel, setVitaSel, visioneSel, setVisioneSel, onOpenVista, onPreviewVista, addVita, addVisione, addVista, renameVita, renameVisione }) {
   return (
     <div>
       <div className="section-head">
@@ -277,9 +354,9 @@ function Worlds({ vite, visioni, viste, vitaSel, setVitaSel, visioneSel, setVisi
               </div>
               <div className="grid-worlds">
                 {viste.map(v => (
-                  <div key={v.id} className="world-card" onClick={() => onOpenVista(v)}>
+                  <div key={v.id} className="world-card" onClick={() => onPreviewVista(v)}>
                     <h3>{v.titolo || 'Senza titolo'}</h3>
-                    <div className="count">livello {v.livello || 0} · apri per modificare</div>
+                    <div className="count">livello {v.livello || 0} · tocca per anteprima</div>
                   </div>
                 ))}
                 {!viste.length && <Empty msg="Nessuna vista: creane una." />}

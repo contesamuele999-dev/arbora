@@ -63,7 +63,7 @@ export default function Levels({ viste, links, onReparent, onOpen }) {
                 style={{minWidth:150,opacity:dragId===v.id?0.4:1}}>
                 <h3 style={{fontSize:14,margin:0}}>{v.titolo||'Senza titolo'}</h3>
                 <div className="count">L{v.livello||0}{v.parent_id?'':' · radice'}</div>
-                <button className="open-mini" title="Apri" onClick={(e)=>{e.stopPropagation(); onOpen(v)}}>apri ✎</button>
+                <button className="open-mini iconbtn" title="Apri e modifica" onClick={(e)=>{e.stopPropagation(); onOpen(v)}}>✎</button>
               </div>
             ))}
           </div>

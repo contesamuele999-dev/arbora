@@ -131,6 +131,8 @@ export default function Editor({ vista, onChange, onWikilink, focusMode }) {
         onChange={e => titleChange(e.target.value)} />
 
       {!focusMode && (
+        <>
+        <div className="link-hint">💡 Scrivi <code>[[Nome vista]]</code> per creare un collegamento: nel testo diventa un link verde cliccabile che apre (o crea) quella vista.</div>
         <div className="toolbar">
           <button className="iconbtn" title="Annulla (Ctrl+Z)" onClick={undo}>↶</button>
           <button className="iconbtn" title="Ripeti (Ctrl+Y)" onClick={redo}>↷</button>
@@ -138,8 +140,15 @@ export default function Editor({ vista, onChange, onWikilink, focusMode }) {
           <button className="iconbtn" title="Grassetto" onClick={() => editing && setText(editing, (blocks.find(b=>b.id===editing)?.text||'') + '**testo**')}><b>B</b></button>
           <button className="iconbtn" title="Corsivo" onClick={() => editing && setText(editing, (blocks.find(b=>b.id===editing)?.text||'') + '*testo*')}><i>I</i></button>
           <button className="iconbtn" title="Sezione / divisore" onClick={() => addBlock(editing, '---')}>—</button>
-          <button className="iconbtn" title="Link a vista [[...]]" onClick={() => editing && setText(editing, (blocks.find(b=>b.id===editing)?.text||'') + '[[Titolo vista]]')}>🔗</button>
+          <button className="iconbtn" title="Inserisci collegamento a un'altra vista" onClick={() => {
+            const cur = editing || (blocks[0] && blocks[0].id)
+            if (!editing && cur) setEditing(cur)
+            const id = cur
+            const t = blocks.find(b=>b.id===id)?.text || ''
+            setText(id, t + (t && !t.endsWith(' ') ? ' ' : '') + '[[Nome della vista]]')
+          }}>🔗 link</button>
         </div>
+        </>
       )}
 
       {blocks.map(b => (

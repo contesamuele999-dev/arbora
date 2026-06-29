@@ -21,17 +21,29 @@ export function Privacy() {
       <p>I dati sono trattati per fornirti il servizio (esecuzione del contratto), per garantire la sicurezza
       dell'account e per il funzionamento tecnico della sincronizzazione. I contenuti sono accessibili solo a te.</p>
 
-      <h2>4. Conservazione e hosting</h2>
-      <p>I dati sono conservati tramite Supabase (infrastruttura cloud) e GitHub Pages per la distribuzione
-      dell'applicazione. La separazione degli accessi è garantita da policy di sicurezza a livello di riga (Row Level Security).</p>
+      <h2>4. Conservazione, hosting e fornitori (sub-responsabili)</h2>
+      <p>Per erogare il servizio ci avvaliamo dei seguenti fornitori che trattano i dati per nostro conto, in qualità di
+      responsabili del trattamento:</p>
+      <p><b>Supabase</b> (Supabase, Inc.) — fornisce l'autenticazione, il database e la sincronizzazione cloud. Su Supabase
+      sono conservati il tuo indirizzo email, la password in forma cifrata e tutti i contenuti che crei (vite, visioni,
+      viste e collegamenti). L'accesso ai dati è isolato per utente tramite policy di sicurezza a livello di riga
+      (Row Level Security): nessun altro utente può leggere o modificare i tuoi contenuti. Supabase può conservare i dati
+      su infrastrutture situate anche al di fuori dell'Unione Europea; in tal caso il trasferimento avviene nel rispetto
+      delle garanzie previste dal GDPR. Per dettagli vedi la privacy policy di Supabase sul loro sito.</p>
+      <p><b>GitHub Pages</b> (GitHub, Inc.) — ospita e distribuisce il codice statico dell'applicazione (i file che il tuo
+      browser scarica). GitHub non riceve i contenuti delle tue note, ma può registrare dati tecnici di connessione
+      (es. indirizzo IP) per il funzionamento del servizio di hosting.</p>
+      <p>Non vendiamo né cediamo i tuoi dati a terzi per finalità di marketing.</p>
 
       <h2>5. I tuoi diritti</h2>
       <p>Hai diritto di accedere, rettificare, cancellare i tuoi dati, limitarne il trattamento, opporti e richiederne
-      la portabilità. Puoi eliminare il tuo account e i relativi contenuti in qualsiasi momento.</p>
+      la portabilità. Puoi eliminare il tuo account e i relativi contenuti in qualsiasi momento. Puoi inoltre esportare
+      in autonomia tutti i tuoi dati in formato JSON tramite la funzione di backup presente nel menu dell'App.</p>
 
       <h2>6. Cookie e archiviazione locale</h2>
-      <p>L'App utilizza l'archiviazione locale del browser per mantenere la sessione e, in modalità offline, una copia
-      locale dei tuoi contenuti. Non utilizziamo cookie di profilazione o di terze parti per finalità pubblicitarie.</p>
+      <p>L'App utilizza l'archiviazione locale del browser per mantenere la sessione, le preferenze (come il tema scelto)
+      e, in modalità offline, una copia locale dei tuoi contenuti. Non utilizziamo cookie di profilazione o di terze parti
+      per finalità pubblicitarie.</p>
 
       <h2>7. Modifiche</h2>
       <p>Questa informativa può essere aggiornata. Le modifiche saranno pubblicate in questa pagina.</p>
@@ -61,7 +73,7 @@ export function Terms() {
 
       <h2>4. Disponibilità del servizio</h2>
       <p>L'App è fornita "così com'è". Pur impegnandoci per la continuità del servizio, non garantiamo l'assenza di
-      interruzioni o errori. Si consiglia di esportare periodicamente i contenuti importanti.</p>
+      interruzioni o errori. Si consiglia di esportare periodicamente i contenuti importanti tramite la funzione di backup.</p>
 
       <h2>5. Limitazione di responsabilità</h2>
       <p>Nei limiti consentiti dalla legge, il titolare non è responsabile per perdite di dati, danni indiretti o
