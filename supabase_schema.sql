@@ -48,6 +48,7 @@ create table if not exists public.viste (
   blocchi     jsonb default '[]'::jsonb,
   is_template boolean default false,
   livello     int default 0,
+  ordine      int  default 0,
   parent_id   uuid references public.viste(id) on delete set null,
   pos_x       float default 0,   -- posizione nella mappa 2.5D
   pos_y       float default 0,

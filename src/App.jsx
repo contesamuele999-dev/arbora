@@ -79,7 +79,7 @@ export default function App() {
       const v = await store.insert('viste', {
         visione_id: visioneSel.id, titolo: nome,
         blocchi: template ? [{ id: 't1', text: '# ' + nome }, { id: 't2', text: '## Sezione' }, { id: 't3', text: '- punto' }] : [{ id: 'b1', text: '' }],
-        is_template: template, livello: 0, parent_id: null, pos_x: 0, pos_y: 0,
+        is_template: template, livello: 0, parent_id: null, pos_x: 0, pos_y: 0, ordine: viste.length,
       })
       setViste(prev => [...prev, v]); setVistaAperta(v)
     }})
@@ -109,7 +109,7 @@ export default function App() {
   const openByName = async (name) => {
     let target = viste.find(v => (v.titolo || '').toLowerCase() === name.toLowerCase())
     if (!target) {
-      target = await store.insert('viste', { visione_id: visioneSel.id, titolo: name, blocchi: [{id:'b1',text:''}], livello: (vistaAperta?.livello||0)+1, parent_id: vistaAperta?.id||null, pos_x: 0, pos_y: 0 })
+      target = await store.insert('viste', { visione_id: visioneSel.id, titolo: name, blocchi: [{id:'b1',text:''}], livello: (vistaAperta?.livello||0)+1, parent_id: vistaAperta?.id||null, pos_x: 0, pos_y: 0, ordine: viste.length })
       setViste(vs => [...vs, target])
       if (vistaAperta) {
         const lk = await store.insert('links', { da_vista: vistaAperta.id, a_vista: target.id, tipo: 'maggiore' })
