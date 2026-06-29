@@ -192,7 +192,7 @@ export default function App() {
             : <Empty msg="Seleziona o crea una visione nei Mondi." />
         )}
         {tab === 'mappa' && (
-          viste.length ? <MapView viste={viste} links={links} onOpen={setVistaAperta} />
+          viste.length ? <MapView viste={viste} links={links} onOpen={setVistaAperta} onAddVista={addVista} />
             : <Empty msg="Crea qualche vista per vedere la mappa." />
         )}
         {tab === 'livelli' && (

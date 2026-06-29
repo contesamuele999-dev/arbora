@@ -208,15 +208,42 @@ a { color: var(--accent); text-decoration: none; }
 .menu-list button:hover { border-color: var(--green); }
 
 /* footer legale */
-.legal { max-width: 720px; margin: 0 auto; padding: 30px 20px 80px; line-height: 1.7; color: var(--text-dim); }
-.legal h1 { color: var(--text); }
-.legal h2 { color: var(--text); margin-top: 28px; }
-.copyright { text-align: center; padding: 18px; color: var(--text-dim); font-size: 12px; border-top: 1px solid var(--border); }
-
-/* responsive */
-@media (max-width: 640px) {
-  .tabs { font-size: 12px; }
-  .tab { padding: 7px 10px; }
-  .brand span { display: none; }
-  .pipeline { columns: 1; }
+.legal { max-wi
+/* ---------- Map: zoom controls + mobile ---------- */
+.map-zoom {
+  position: absolute; left: 12px; bottom: 12px; z-index: 10;
+  display: flex; flex-direction: column; gap: 6px;
+  background: rgba(20,30,24,.8); backdrop-filter: blur(8px);
+  padding: 6px; border-radius: 12px; border: 1px solid var(--border);
 }
+.map-zoom .iconbtn { width: 36px; height: 36px; }
+.map-toolbar { flex-wrap: wrap; max-width: calc(100% - 24px); }
+
+@media (max-width: 640px) {
+  .map-toolbar { top: 8px; left: 8px; padding: 4px; gap: 3px; }
+  .map-toolbar .tab { font-size: 11px; padding: 5px 8px; }
+  .level-filter { top: 8px; right: 8px; padding: 4px; gap: 3px; }
+  .level-filter .lvl-chip { padding: 4px 7px; font-size: 11px; }
+  .map-zoom { left: 8px; bottom: 8px; }
+}
+
+/* ---------- Levels: guida + card ---------- */
+.levels-help {
+  background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--green-bright);
+  border-radius: 12px; padding: 12px 14px; margin-bottom: 18px; font-size: 13px; line-height: 1.6; color: var(--text-dim);
+}
+.levels-help b { color: var(--text); }
+.level-label { color: var(--text-dim); font-weight: 700; margin-bottom: 8px; font-size: 13px; }
+.level-card { position: relative; cursor: pointer; transition: .15s; padding-bottom: 30px !important; }
+.level-card.picked { outline: 2px solid var(--green-bright); box-shadow: 0 0 0 4px rgba(52,210,126,.15); }
+.level-card.targetable { border-style: dashed; border-color: var(--green-deep); }
+.level-card .open-mini {
+  position: absolute; right: 8px; bottom: 8px; font-size: 11px; color: var(--accent);
+  background: transparent; border: none; padding: 2px 4px;
+}
+.level-card .open-mini:hover { text-decoration: underline; }
+.root-drop {
+  margin-top: 16px; padding: 18px; border: 1px dashed var(--border); border-radius: 12px;
+  color: var(--text-dim); text-align: center; cursor: pointer; transition: .15s; font-size: 13px;
+}
+.root-drop.targetable { border-color: var(--green-bright); color: var(--green-bright); background: rgba(52,210,126,.06); }
