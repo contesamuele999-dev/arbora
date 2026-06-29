@@ -181,9 +181,10 @@ export default function App() {
 
       <div className="content">
         {tab === 'mondi' && (
-          <Worlds vite={vite} visioni={visioni} vitaSel={vitaSel} setVitaSel={setVitaSel}
-            setVisioneSel={(v) => { setVisioneSel(v); setTab('pipeline') }}
-            addVita={addVita} addVisione={addVisione}
+          <Worlds vite={vite} visioni={visioni} viste={viste}
+            vitaSel={vitaSel} setVitaSel={setVitaSel}
+            visioneSel={visioneSel} setVisioneSel={setVisioneSel}
+            onOpenVista={setVistaAperta} addVita={addVita} addVisione={addVisione} addVista={addVista}
             renameVita={renameVita} renameVisione={renameVisione} />
         )}
         {tab === 'pipeline' && (
@@ -224,7 +225,7 @@ export default function App() {
   )
 }
 
-function Worlds({ vite, visioni, vitaSel, setVitaSel, setVisioneSel, addVita, addVisione, renameVita, renameVisione }) {
+function Worlds({ vite, visioni, viste, vitaSel, setVitaSel, visioneSel, setVisioneSel, onOpenVista, addVita, addVisione, addVista, renameVita, renameVisione }) {
   return (
     <div>
       <div className="section-head">
@@ -255,15 +256,36 @@ function Worlds({ vite, visioni, vitaSel, setVitaSel, setVisioneSel, addVita, ad
           </div>
           <div className="grid-worlds">
             {visioni.map(v => (
-              <div key={v.id} className="world-card" onClick={() => setVisioneSel(v)}>
+              <div key={v.id} className="world-card" onClick={() => setVisioneSel(v)}
+                style={{outline: visioneSel?.id===v.id ? '2px solid var(--green-bright)' : 'none'}}>
                 <div className="swatch" style={{background:v.colore}} />
                 <button className="rename-btn" title="Rinomina" onClick={(e) => { e.stopPropagation(); renameVisione(v) }}>✎</button>
                 <h3>{v.titolo}</h3>
-                <div className="count">apri la pipeline di viste</div>
+                <div className="count">tocca per vedere le viste</div>
               </div>
             ))}
             {!visioni.length && <Empty msg="Nessuna visione: creane una." />}
           </div>
+
+          {visioneSel && (
+            <>
+              <div className="section-head">
+                <h2>Viste di "{visioneSel.titolo}"</h2>
+                <span className="crumb">fogli · note</span>
+                <div className="spacer" />
+                <button className="add-btn" onClick={() => addVista(false)}>＋ Nuova vista</button>
+              </div>
+              <div className="grid-worlds">
+                {viste.map(v => (
+                  <div key={v.id} className="world-card" onClick={() => onOpenVista(v)}>
+                    <h3>{v.titolo || 'Senza titolo'}</h3>
+                    <div className="count">livello {v.livello || 0} · apri per modificare</div>
+                  </div>
+                ))}
+                {!viste.length && <Empty msg="Nessuna vista: creane una." />}
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
