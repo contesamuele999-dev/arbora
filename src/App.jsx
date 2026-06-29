@@ -27,10 +27,10 @@ export default function App() {
   const [visioneSel, setVisioneSel] = useState(null)
   const [vistaAperta, setVistaAperta] = useState(null)
   const [focusMode, setFocusMode] = useState(false)
-  const [legal, setLegal] = useState(null)   // 'privacy' | 'terms' | null
+  const [legal, setLegal] = useState(null)
   const [menu, setMenu] = useState(false)
+  const [prompt, setPrompt] = useState(null)
 
-  // carica dati
   const reload = useCallback(async () => {
     const vt = await store.list('vite')
     setVite(vt)
@@ -60,24 +60,44 @@ export default function App() {
   if (loading) return <div style={{display:'grid',placeItems:'center',height:'100dvh'}}>Caricamento…</div>
   if (!user) return <Auth />
 
-  // ---- azioni ----
-  const addVita = async () => {
-    const v = await store.insert('vite', { titolo: 'Nuova vita', colore: '#1f7a4d', ordine: vite.length })
-    setVite([...vite, v]); setVitaSel(v)
+  const addVita = () => {
+    setPrompt({ titolo: 'Nuova vita', label: 'Nome della vita', valore: '', onOk: async (nome) => {
+      const v = await store.insert('vite', { titolo: nome, colore: '#1f7a4d', ordine: vite.length })
+      setVite(prev => [...prev, v]); setVitaSel(v)
+    }})
   }
-  const addVisione = async () => {
+  const addVisione = () => {
     if (!vitaSel) return
-    const v = await store.insert('visioni', { vita_id: vitaSel.id, titolo: 'Nuova visione', colore: '#2e9e63', ordine: visioni.length })
-    setVisioni([...visioni, v]); setVisioneSel(v); setTab('pipeline')
+    setPrompt({ titolo: 'Nuova visione', label: 'Nome della visione', valore: '', onOk: async (nome) => {
+      const v = await store.insert('visioni', { vita_id: vitaSel.id, titolo: nome, colore: '#2e9e63', ordine: visioni.length })
+      setVisioni(prev => [...prev, v]); setVisioneSel(v); setTab('pipeline')
+    }})
   }
-  const addVista = async (template = false) => {
+  const addVista = (template = false) => {
     if (!visioneSel) return
-    const v = await store.insert('viste', {
-      visione_id: visioneSel.id, titolo: template ? 'Nuovo template' : 'Nuova vista',
-      blocchi: template ? [{ id: 't1', text: '# Titolo' }, { id: 't2', text: '## Sezione' }, { id: 't3', text: '- punto' }] : [{ id: 'b1', text: '' }],
-      is_template: template, livello: 0, parent_id: null, pos_x: 0, pos_y: 0,
-    })
-    setViste([...viste, v]); setVistaAperta(v)
+    setPrompt({ titolo: template ? 'Nuovo template' : 'Nuova vista', label: 'Titolo della vista', valore: '', onOk: async (nome) => {
+      const v = await store.insert('viste', {
+        visione_id: visioneSel.id, titolo: nome,
+        blocchi: template ? [{ id: 't1', text: '# ' + nome }, { id: 't2', text: '## Sezione' }, { id: 't3', text: '- punto' }] : [{ id: 'b1', text: '' }],
+        is_template: template, livello: 0, parent_id: null, pos_x: 0, pos_y: 0,
+      })
+      setViste(prev => [...prev, v]); setVistaAperta(v)
+    }})
+  }
+
+  const renameVita = (vita) => {
+    setPrompt({ titolo: 'Rinomina vita', label: 'Nome della vita', valore: vita.titolo, onOk: async (nome) => {
+      await store.update('vite', vita.id, { titolo: nome })
+      setVite(prev => prev.map(v => v.id === vita.id ? { ...v, titolo: nome } : v))
+      setVitaSel(prev => prev?.id === vita.id ? { ...prev, titolo: nome } : prev)
+    }})
+  }
+  const renameVisione = (visione) => {
+    setPrompt({ titolo: 'Rinomina visione', label: 'Nome della visione', valore: visione.titolo, onOk: async (nome) => {
+      await store.update('visioni', visione.id, { titolo: nome })
+      setVisioni(prev => prev.map(v => v.id === visione.id ? { ...v, titolo: nome } : v))
+      setVisioneSel(prev => prev?.id === visione.id ? { ...prev, titolo: nome } : prev)
+    }})
   }
 
   const saveVista = async (updated) => {
@@ -86,7 +106,6 @@ export default function App() {
     if (vistaAperta?.id === updated.id) setVistaAperta({ ...vistaAperta, ...updated })
   }
 
-  // hyperlink [[Titolo]] -> apre la vista con quel titolo (o la crea)
   const openByName = async (name) => {
     let target = viste.find(v => (v.titolo || '').toLowerCase() === name.toLowerCase())
     if (!target) {
@@ -100,13 +119,11 @@ export default function App() {
     setVistaAperta(target)
   }
 
-  // riparent da scheda Livelli
   const reparent = async (childId, parentId) => {
     const parent = viste.find(v => v.id === parentId)
     const newLevel = parent ? (parent.livello || 0) + 1 : 0
     await store.update('viste', childId, { parent_id: parentId, livello: newLevel })
     setViste(vs => vs.map(v => v.id === childId ? { ...v, parent_id: parentId, livello: newLevel } : v))
-    // aggiorna link maggiore
     if (parentId) {
       const exists = links.find(l => l.a_vista === childId && l.tipo === 'maggiore')
       if (!exists) {
@@ -129,7 +146,6 @@ export default function App() {
     )
   }
 
-  // editor a tutto schermo
   if (vistaAperta) {
     return (
       <div className="app">
@@ -144,6 +160,7 @@ export default function App() {
           <Editor vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} />
         </div>
         <Pomodoro focusMode={focusMode} onToggleFocus={() => setFocusMode(f => !f)} />
+        {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
       </div>
     )
   }
@@ -166,7 +183,8 @@ export default function App() {
         {tab === 'mondi' && (
           <Worlds vite={vite} visioni={visioni} vitaSel={vitaSel} setVitaSel={setVitaSel}
             setVisioneSel={(v) => { setVisioneSel(v); setTab('pipeline') }}
-            addVita={addVita} addVisione={addVisione} />
+            addVita={addVita} addVisione={addVisione}
+            renameVita={renameVita} renameVisione={renameVisione} />
         )}
         {tab === 'pipeline' && (
           visioneSel ? <Pipeline viste={viste} onOpen={setVistaAperta} onAdd={() => addVista(false)} />
@@ -183,6 +201,8 @@ export default function App() {
       </div>
 
       <Pomodoro focusMode={focusMode} onToggleFocus={() => setFocusMode(f => !f)} />
+
+      {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
 
       {menu && (
         <div className="modal-bg" onClick={() => setMenu(false)}>
@@ -204,7 +224,7 @@ export default function App() {
   )
 }
 
-function Worlds({ vite, visioni, vitaSel, setVitaSel, setVisioneSel, addVita, addVisione }) {
+function Worlds({ vite, visioni, vitaSel, setVitaSel, setVisioneSel, addVita, addVisione, renameVita, renameVisione }) {
   return (
     <div>
       <div className="section-head">
@@ -218,6 +238,7 @@ function Worlds({ vite, visioni, vitaSel, setVitaSel, setVisioneSel, addVita, ad
           <div key={v.id} className={'world-card'} onClick={() => setVitaSel(v)}
             style={{outline: vitaSel?.id===v.id ? '2px solid var(--green-bright)' : 'none'}}>
             <div className="swatch" style={{background:v.colore}} />
+            <button className="rename-btn" title="Rinomina" onClick={(e) => { e.stopPropagation(); renameVita(v) }}>✎</button>
             <h3>{v.titolo}</h3>
             <div className="count">tocca per aprire le visioni</div>
           </div>
@@ -236,6 +257,7 @@ function Worlds({ vite, visioni, vitaSel, setVitaSel, setVisioneSel, addVita, ad
             {visioni.map(v => (
               <div key={v.id} className="world-card" onClick={() => setVisioneSel(v)}>
                 <div className="swatch" style={{background:v.colore}} />
+                <button className="rename-btn" title="Rinomina" onClick={(e) => { e.stopPropagation(); renameVisione(v) }}>✎</button>
                 <h3>{v.titolo}</h3>
                 <div className="count">apri la pipeline di viste</div>
               </div>
@@ -244,6 +266,34 @@ function Worlds({ vite, visioni, vitaSel, setVitaSel, setVisioneSel, addVita, ad
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+function NamePrompt({ data, onClose }) {
+  const [val, setVal] = useState(data.valore || '')
+  const ok = () => {
+    const nome = val.trim()
+    if (!nome) return
+    data.onOk(nome)
+    onClose()
+  }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h3>{data.titolo}</h3>
+        <div className="field">
+          <label>{data.label}</label>
+          <input className="input" autoFocus value={val}
+            onChange={e => setVal(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') ok(); if (e.key === 'Escape') onClose() }}
+            placeholder="Scrivi un nome…" />
+        </div>
+        <div className="row">
+          <button className="btn ghost" onClick={onClose}>Annulla</button>
+          <button className="btn" onClick={ok}>Conferma</button>
+        </div>
+      </div>
     </div>
   )
 }
