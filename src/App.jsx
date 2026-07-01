@@ -10,6 +10,7 @@ import Pomodoro from './views/Pomodoro.jsx'
 import { Privacy, Terms } from './pages/Legal.jsx'
 import { THEMES, applyTheme, loadTheme } from './lib/themes.js'
 import { exportBackup, importBackup } from './lib/backup.js'
+import { RenderedBlock } from './lib/markdown.jsx'
 
 const TABS = [
   { id: 'mondi', label: 'Mondi' },
@@ -85,7 +86,7 @@ export default function App() {
       setVisioni(prev => [...prev, v]); setVisioneSel(v); setTab('pipeline')
     }})
   }
-  const addVista = (template = false) => {
+  const addVista = (template = false, { open = true } = {}) => {
     if (!visioneSel) return
     setPrompt({ titolo: template ? 'Nuovo template' : 'Nuova vista', label: 'Titolo della vista', valore: '', onOk: async (nome) => {
       const v = await store.insert('viste', {
@@ -93,7 +94,8 @@ export default function App() {
         blocchi: template ? [{ id: 't1', text: '# ' + nome }, { id: 't2', text: '## Sezione' }, { id: 't3', text: '- punto' }] : [{ id: 'b1', text: '' }],
         is_template: template, livello: 0, parent_id: null, pos_x: 0, pos_y: 0, ordine: viste.length,
       })
-      setViste(prev => [...prev, v]); setVistaAperta(v)
+      setViste(prev => [...prev, v])
+      if (open) setVistaAperta(v)   // in pipeline restiamo in pipeline (open=false)
     }})
   }
 
@@ -187,7 +189,7 @@ export default function App() {
           <button className="iconbtn" title="Focus" onClick={() => setFocusMode(f => !f)}>{focusMode ? '🔅' : '🎯'}</button>
         </div>
         <div className="content">
-          <Editor vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} />
+          <Editor vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} />
         </div>
         <Pomodoro focusMode={focusMode} onToggleFocus={() => setFocusMode(f => !f)} />
         {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
@@ -218,7 +220,7 @@ export default function App() {
             renameVita={renameVita} renameVisione={renameVisione} />
         )}
         {tab === 'pipeline' && (
-          visioneSel ? <Pipeline viste={viste} onOpen={setVistaAperta} onAdd={() => addVista(false)} />
+          visioneSel ? <Pipeline viste={viste} onOpen={setVistaAperta} onAdd={() => addVista(false, { open: false })} />
             : <Empty msg="Seleziona o crea una visione nei Mondi." />
         )}
         {tab === 'mappa' && (
@@ -261,9 +263,11 @@ export default function App() {
         <div className="modal-bg" onClick={() => setPreview(null)}>
           <div className="modal preview-modal" onClick={e => e.stopPropagation()}>
             <h3>{preview.titolo || 'Senza titolo'}</h3>
-            <div className="preview-body">
+            <div className="preview-body rendered">
               {(preview.blocchi || []).map(b => (
-                <div key={b.id} className="preview-line">{b.text || ''}</div>
+                <div key={b.id} className="preview-line">
+                  {b.text ? <RenderedBlock text={b.text} /> : ''}
+                </div>
               ))}
               {!(preview.blocchi || []).length && <div style={{color:'var(--text-dim)'}}>Vista vuota.</div>}
             </div>

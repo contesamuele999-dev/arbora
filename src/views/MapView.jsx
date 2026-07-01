@@ -31,10 +31,10 @@ export default function MapView({ viste, links, onOpen, onAddVista, onReparent }
       const lvl = v.livello || 0
       const peers = byLevel[lvl]; const idx = peers.indexOf(v); const n = peers.length
       let x, y
-      if (mode === '25d') { x = (idx-(n-1)/2)*200 + lvl*26; y = lvl*130 }
+      if (mode === '25d') { x = (idx-(n-1)/2)*210 + lvl*14; y = lvl*140 }
       else if (mode === 'mind') {
-        if (lvl===0){x=0;y=0} else { const a=(idx/Math.max(1,n))*Math.PI*2, r=lvl*190; x=Math.cos(a)*r; y=Math.sin(a)*r }
-      } else { x=(idx-(n-1)/2)*190; y=lvl*150 }
+        if (lvl===0){x=0;y=0} else { const a=(idx/Math.max(1,n))*Math.PI*2, r=lvl*(150 + Math.min(n,12)*16); x=Math.cos(a)*r; y=Math.sin(a)*r }
+      } else { x=(idx-(n-1)/2)*200; y=lvl*160 }
       return { ...v, _x: x, _y: y }
     })
   }, [viste, mode])

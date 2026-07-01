@@ -219,7 +219,12 @@ a { color: var(--accent); text-decoration: none; }
 .menu-list button:hover { border-color: var(--green); }
 
 /* footer legale */
-.legal { max-wi
+.legal { max-width: 760px; margin: 0 auto; padding: 22px 18px 90px; line-height: 1.7; color: var(--text); }
+.legal h1 { font-size: 24px; margin: 8px 0 12px; }
+.legal h2 { font-size: 18px; margin: 20px 0 8px; }
+.legal p { color: var(--text-dim); margin: 8px 0; }
+.legal a { color: var(--accent); }
+
 /* ---------- Map: zoom controls + mobile ---------- */
 .map-zoom {
   position: absolute; left: 12px; bottom: 12px; z-index: 10;
@@ -242,9 +247,16 @@ a { color: var(--accent); text-decoration: none; }
 .node.drop-on { border-color: var(--green-bright); background: var(--panel-2); box-shadow: 0 0 0 4px rgba(52,210,126,.3); }
 
 @media (max-width: 640px) {
-  .map-bar { gap: 6px; padding: 5px 6px; }
+  .map-bar { gap: 6px; padding: 5px 6px; flex-wrap: nowrap; }
   .map-bar .tab { font-size: 11px; padding: 5px 7px; }
-  .map-levels .lvl-chip { padding: 4px 7px; font-size: 11px; }
+  .map-modes { flex: 0 0 auto; }
+  .map-levels {
+    flex: 1 1 auto; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-end;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  }
+  .map-levels::-webkit-scrollbar { display: none; }
+  .map-levels .lvl-chip { padding: 4px 7px; font-size: 11px; flex: 0 0 auto; }
+  .map-lbl { display: none; }
   .map-zoom { right: 8px; bottom: 8px; }
   .map-hint { display: none; }
 }
@@ -288,9 +300,12 @@ a { color: var(--accent); text-decoration: none; }
 .menu-import:hover { border-color: var(--green); }
 
 /* ---------- Anteprima vista ---------- */
-.preview-modal { max-width: 520px; }
+.preview-modal { max-width: 520px; display: flex; flex-direction: column; max-height: 85dvh; }
+.preview-modal h3 { flex: 0 0 auto; }
+.preview-modal .row { flex: 0 0 auto; }
 .preview-body {
-  max-height: 50vh; overflow: auto; background: var(--bg-2); border: 1px solid var(--border);
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  background: var(--bg-2); border: 1px solid var(--border);
   border-radius: 10px; padding: 14px; margin: 6px 0 4px;
 }
 .preview-line { line-height: 1.6; white-space: pre-wrap; color: var(--text); font-size: 14px; margin: 2px 0; }
@@ -298,6 +313,55 @@ a { color: var(--accent); text-decoration: none; }
 /* ---------- Hint link nell'editor ---------- */
 .link-hint {
   background: var(--bg-2); border: 1px solid var(--border); border-left: 3px solid var(--green-bright);
-  border-radius: 10px; padding: 9px 12px; margin-bottom: 10px; font-size: 12.5px; color: var(--text-dim); line-height: 1.5;
+  border-radius: 10px; padding: 9px 12px; margin-bottom: 20px; font-size: 12.5px; color: var(--text-dim); line-height: 1.5;
 }
 .link-hint code { background: var(--bg); padding: 1px 5px; border-radius: 4px; color: var(--green-bright); }
+
+/* ---------- Suggerimento collegamenti ---------- */
+.link-suggest {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: -4px 0 14px; padding: 8px 10px; border-radius: 10px;
+  background: rgba(52,210,126,.07); border: 1px dashed var(--green-deep);
+  animation: drop .2s ease;
+}
+.link-suggest-lbl { font-size: 12px; color: var(--text-dim); font-weight: 600; }
+.link-suggest-chip {
+  padding: 5px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  background: var(--panel); border: 1px solid var(--green-deep); color: var(--green-bright);
+}
+.link-suggest-chip:hover { background: var(--panel-2); border-color: var(--green-bright); }
+
+/* ---------- Ottimizzazione telefono ---------- */
+@media (max-width: 560px) {
+  .topbar { padding: 8px 10px; gap: 8px; }
+  .brand img { width: 24px; height: 24px; }
+  .brand span { font-size: 16px; }
+  .brand img + span { display: none; }         /* nasconde solo il wordmark "Arbora", non il titolo visione */
+  .topbar .spacer { flex: 1 1 auto; }
+  .tabs { padding: 3px; gap: 2px; }
+  .tab { padding: 6px 9px; font-size: 12px; }
+  .iconbtn { width: 34px; height: 34px; font-size: 15px; }
+
+  .section-head { padding: 12px 14px 4px; gap: 8px; }
+  .section-head h2 { font-size: 18px; }
+
+  .grid-worlds { padding: 14px; gap: 12px; grid-template-columns: 1fr; }
+  .world-card { padding: 16px; }
+
+  .pipeline { padding: 14px; column-gap: 12px; columns: 160px; }
+
+  .editor { padding: 14px 12px 130px; }
+  .editor-title { font-size: 22px; }
+  .toolbar { top: 4px; }
+
+  .modal { padding: 18px; border-radius: 16px; }
+  .theme-grid { grid-template-columns: 1fr; }
+
+  .pomodoro { right: 12px; bottom: 12px; }
+}
+
+/* schermi molto stretti: la pipeline resta a colonna singola leggibile */
+@media (max-width: 380px) {
+  .pipeline { columns: 1; }
+  .tab { padding: 6px 7px; font-size: 11px; }
+}

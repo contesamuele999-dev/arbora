@@ -1,11 +1,18 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { RenderedBlock } from '../lib/markdown.jsx'
 
 const uid = () => 'b-' + Math.random().toString(36).slice(2, 9)
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// Racchiude la prima occorrenza "libera" di `name` (non già dentro (( )) o [[ ]]) in un collegamento.
+function linkifyName(text, name) {
+  const re = new RegExp('(?<![\\(\\[])\\b' + escapeRe(name) + '\\b(?![\\)\\]])', 'i')
+  return text.replace(re, (match) => '((' + match + '))')
+}
 
 // Editor della singola VISTA: blocchi markdown, drag&drop, copia tap,
 // elimina doppio tap, undo/redo, sezioni (divider).
-export default function Editor({ vista, onChange, onWikilink, focusMode }) {
+export default function Editor({ vista, onChange, onWikilink, focusMode, allViste = [] }) {
   const [blocks, setBlocks] = useState(vista.blocchi?.length ? vista.blocchi : [{ id: uid(), text: '' }])
   const [title, setTitle] = useState(vista.titolo || '')
   const [editing, setEditing] = useState(null)     // id del blocco in edit
@@ -125,6 +132,32 @@ export default function Editor({ vista, onChange, onWikilink, focusMode }) {
 
   const titleChange = (v) => { setTitle(v); persist(blocks, v) }
 
+  // ---- suggerimento collegamenti: se scrivi il nome di un'altra vista ----
+  const editingText = blocks.find(b => b.id === editing)?.text || ''
+  const suggestions = useMemo(() => {
+    const t = editingText
+    if (!t.trim()) return []
+    const seen = new Set()
+    const out = []
+    for (const v of allViste) {
+      if (v.id === vista.id) continue
+      const name = (v.titolo || '').trim()
+      if (name.length < 2 || seen.has(name.toLowerCase())) continue
+      if (t.includes('((' + name + '))') || t.includes('[[' + name + ']]')) continue
+      const re = new RegExp('(?<![\\(\\[])\\b' + escapeRe(name) + '\\b(?![\\)\\]])', 'i')
+      if (re.test(t)) { seen.add(name.toLowerCase()); out.push(name) }
+      if (out.length >= 4) break
+    }
+    return out
+  }, [editingText, allViste, vista.id])
+
+  const applyLink = (name) => {
+    if (!editing) return
+    const b = blocks.find(x => x.id === editing)
+    if (!b) return
+    setText(editing, linkifyName(b.text, name))
+  }
+
   return (
     <div className="editor">
       <input className="editor-title" value={title} placeholder="Titolo della vista…"
@@ -132,7 +165,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode }) {
 
       {!focusMode && (
         <>
-        <div className="link-hint">💡 Scrivi <code>[[Nome vista]]</code> per creare un collegamento: nel testo diventa un link verde cliccabile che apre (o crea) quella vista.</div>
+        <div className="link-hint">💡 Scrivi <code>((Nome vista))</code> — oppure usa il tasto 🔗 — per creare un collegamento: nel testo diventa un link verde cliccabile che apre (o crea) quella vista.</div>
         <div className="toolbar">
           <button className="iconbtn" title="Annulla (Ctrl+Z)" onClick={undo}>↶</button>
           <button className="iconbtn" title="Ripeti (Ctrl+Y)" onClick={redo}>↷</button>
@@ -145,10 +178,19 @@ export default function Editor({ vista, onChange, onWikilink, focusMode }) {
             if (!editing && cur) setEditing(cur)
             const id = cur
             const t = blocks.find(b=>b.id===id)?.text || ''
-            setText(id, t + (t && !t.endsWith(' ') ? ' ' : '') + '[[Nome della vista]]')
-          }}>🔗 link</button>
+            setText(id, t + (t && !t.endsWith(' ') ? ' ' : '') + '((Nome della vista))')
+          }}>🔗</button>
         </div>
         </>
+      )}
+
+      {suggestions.length > 0 && (
+        <div className="link-suggest">
+          <span className="link-suggest-lbl">Collega a:</span>
+          {suggestions.map(name => (
+            <button key={name} className="link-suggest-chip" onClick={() => applyLink(name)}>🔗 {name}</button>
+          ))}
+        </div>
       )}
 
       {blocks.map(b => (

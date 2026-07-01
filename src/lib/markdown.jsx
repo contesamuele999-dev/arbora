@@ -2,10 +2,10 @@
 // Volutamente leggero: niente dipendenze, veloce per il flusso creativo.
 
 export function renderInline(text) {
-  // gestisce **bold**, *italic*, `code`, [[wikilink]]
+  // gestisce **bold**, *italic*, `code`, ((collegamento)) e [[collegamento]]
   const parts = []
   let i = 0
-  const regex = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[\[[^\]]+\]\])/g
+  const regex = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[\[[^\]]+\]\]|\(\([^)]+\)\))/g
   let last = 0, m
   while ((m = regex.exec(text)) !== null) {
     if (m.index > last) parts.push(text.slice(last, m.index))
@@ -13,7 +13,7 @@ export function renderInline(text) {
     if (tok.startsWith('**')) parts.push(<strong key={i++}>{tok.slice(2, -2)}</strong>)
     else if (tok.startsWith('*')) parts.push(<em key={i++}>{tok.slice(1, -1)}</em>)
     else if (tok.startsWith('`')) parts.push(<code key={i++}>{tok.slice(1, -1)}</code>)
-    else if (tok.startsWith('[[')) {
+    else if (tok.startsWith('[[') || tok.startsWith('((')) {
       const name = tok.slice(2, -2)
       parts.push(<span key={i++} className="wikilink" data-link={name}>{name}</span>)
     }
