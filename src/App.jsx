@@ -1,33 +1,30 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAuth } from './lib/auth.jsx'
 import { store } from './lib/store.js'
 import Auth from './pages/Auth.jsx'
 import Editor from './views/Editor.jsx'
-import MapView from './views/MapView.jsx'
 import Pipeline from './views/Pipeline.jsx'
-import Levels from './views/Levels.jsx'
+import Tree from './views/Tree.jsx'
+import Progress from './views/Progress.jsx'
 import Pomodoro from './views/Pomodoro.jsx'
 import { Privacy, Terms } from './pages/Legal.jsx'
 import { THEMES, applyTheme, loadTheme } from './lib/themes.js'
 import { exportBackup, importBackup } from './lib/backup.js'
 import { RenderedBlock } from './lib/markdown.jsx'
+import { DEFAULT_STAGE } from './lib/stages.js'
 
 const TABS = [
-  { id: 'mondi', label: 'Mondi' },
-  { id: 'pipeline', label: 'Pipeline' },
-  { id: 'mappa', label: 'Mappa' },
-  { id: 'livelli', label: 'Livelli' },
+  { id: 'pipe', label: 'Pipe' },
+  { id: 'tree', label: 'Tree' },
+  { id: 'progress', label: 'Progress' },
 ]
 
 export default function App() {
   const { user, loading, signOut, isDemo } = useAuth()
-  const [tab, setTab] = useState('mondi')
-  const [vite, setVite] = useState([])
+  const [tab, setTab] = useState('pipe')
   const [visioni, setVisioni] = useState([])
   const [viste, setViste] = useState([])
   const [links, setLinks] = useState([])
-  const [vitaSel, setVitaSel] = useState(null)
-  const [visioneSel, setVisioneSel] = useState(null)
   const [vistaAperta, setVistaAperta] = useState(null)
   const [focusMode, setFocusMode] = useState(false)
   const [legal, setLegal] = useState(null)
@@ -37,81 +34,98 @@ export default function App() {
   const [themeOpen, setThemeOpen] = useState(false)
   const [preview, setPreview] = useState(null)
   const [busy, setBusy] = useState('')
+  const defaultVita = useRef(null)   // vita "silente": serve solo al DB, non è più esposta in UI
+  const stageWarned = useRef(false)
 
   const reload = useCallback(async () => {
-    const vt = await store.list('vite')
-    setVite(vt)
-    if (vt.length && !vitaSel) setVitaSel(vt[0])
-  }, [vitaSel])
+    const [vt, vs, allViste, allLinks] = await Promise.all([
+      store.list('vite'), store.list('visioni'), store.list('viste'), store.list('links'),
+    ])
+    defaultVita.current = vt[0] || null
+    setVisioni(vs)
+    setViste(allViste)
+    const ids = new Set(allViste.map(v => v.id))
+    setLinks(allLinks.filter(l => ids.has(l.da_vista) && ids.has(l.a_vista)))
+  }, [])
 
   useEffect(() => { setTheme(loadTheme()) }, [])
-  useEffect(() => { if (user) reload() }, [user])
+  useEffect(() => { if (user) reload() }, [user, reload])
 
-  useEffect(() => {
-    if (!vitaSel) return
-    // se la visione selezionata appartiene a un'altra vita, deselezionala subito
-    setVisioneSel(prev => (prev && prev.vita_id !== vitaSel.id) ? null : prev)
-    store.list('visioni', { vita_id: vitaSel.id }).then(vs => {
-      setVisioni(vs)
-      setVisioneSel(prev => {
-        if (prev && vs.some(x => x.id === prev.id)) return prev   // ancora valida
-        return vs.length ? vs[0] : null                            // altrimenti prima o nulla
-      })
-    })
-  }, [vitaSel])
-
-  useEffect(() => {
-    if (!visioneSel) { setViste([]); return }
-    store.list('viste', { visione_id: visioneSel.id }).then(async vs => {
-      setViste(vs)
-      const allLinks = await store.list('links')
-      const ids = new Set(vs.map(v => v.id))
-      setLinks(allLinks.filter(l => ids.has(l.da_vista) && ids.has(l.a_vista)))
-    })
-  }, [visioneSel])
+  // ---- swipe fra le schede ----
+  const swipe = useRef(null)
+  const onTouchStart = (e) => {
+    const t = e.touches[0]
+    // niente swipe se il gesto parte da un'area che gestisce il pan/scroll orizzontale
+    const noswipe = e.target.closest('[data-noswipe]')
+    let scroller = null
+    if (noswipe?.dataset?.noswipe === 'scroll') scroller = noswipe
+    swipe.current = { x: t.clientX, y: t.clientY, blocked: noswipe && !scroller, scroller, sl: scroller?.scrollLeft ?? 0 }
+  }
+  const onTouchEnd = (e) => {
+    const s = swipe.current; swipe.current = null
+    if (!s || s.blocked || vistaAperta) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - s.x, dy = t.clientY - s.y
+    if (Math.abs(dx) < 70 || Math.abs(dy) > 60 || Math.abs(dx) < Math.abs(dy)) return
+    if (s.scroller) {
+      const el = s.scroller
+      if (el.scrollLeft !== s.sl) return                                   // lo scroller ha consumato il gesto
+      const atStart = el.scrollLeft <= 1
+      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1
+      if ((dx > 0 && !atStart) || (dx < 0 && !atEnd)) return               // può ancora scorrere
+    }
+    const idx = TABS.findIndex(x => x.id === tab)
+    const next = dx < 0 ? idx + 1 : idx - 1
+    if (next >= 0 && next < TABS.length) setTab(TABS[next].id)
+  }
 
   if (loading) return <div style={{display:'grid',placeItems:'center',height:'100dvh'}}>Caricamento…</div>
   if (!user) return <Auth />
 
-  const addVita = () => {
-    setPrompt({ titolo: 'Nuova vita', label: 'Nome della vita', valore: '', onOk: async (nome) => {
-      const v = await store.insert('vite', { titolo: nome, colore: '#1f7a4d', ordine: vite.length })
-      setVite(prev => [...prev, v]); setVitaSel(v)
-    }})
+  const ensureVita = async () => {
+    if (defaultVita.current) return defaultVita.current
+    const v = await store.insert('vite', { titolo: 'Arbora', colore: '#1f7a4d', ordine: 0 })
+    defaultVita.current = v
+    return v
   }
+
   const addVisione = () => {
-    if (!vitaSel) return
     setPrompt({ titolo: 'Nuova visione', label: 'Nome della visione', valore: '', onOk: async (nome) => {
-      const v = await store.insert('visioni', { vita_id: vitaSel.id, titolo: nome, colore: '#2e9e63', ordine: visioni.length })
-      setVisioni(prev => [...prev, v]); setVisioneSel(v); setTab('pipeline')
-    }})
-  }
-  const addVista = (template = false, { open = true } = {}) => {
-    if (!visioneSel) return
-    setPrompt({ titolo: template ? 'Nuovo template' : 'Nuova vista', label: 'Titolo della vista', valore: '', onOk: async (nome) => {
-      const v = await store.insert('viste', {
-        visione_id: visioneSel.id, titolo: nome,
-        blocchi: template ? [{ id: 't1', text: '# ' + nome }, { id: 't2', text: '## Sezione' }, { id: 't3', text: '- punto' }] : [{ id: 'b1', text: '' }],
-        is_template: template, livello: 0, parent_id: null, pos_x: 0, pos_y: 0, ordine: viste.length,
-      })
-      setViste(prev => [...prev, v])
-      if (open) setVistaAperta(v)   // in pipeline restiamo in pipeline (open=false)
+      const vita = await ensureVita()
+      const v = await store.insert('visioni', { vita_id: vita.id, titolo: nome, colore: '#2e9e63', ordine: visioni.length })
+      setVisioni(prev => [...prev, v])
     }})
   }
 
-  const renameVita = (vita) => {
-    setPrompt({ titolo: 'Rinomina vita', label: 'Nome della vita', valore: vita.titolo, onOk: async (nome) => {
-      await store.update('vite', vita.id, { titolo: nome })
-      setVite(prev => prev.map(v => v.id === vita.id ? { ...v, titolo: nome } : v))
-      setVitaSel(prev => prev?.id === vita.id ? { ...prev, titolo: nome } : prev)
+  // Crea una vista. parent: vista genitore (Tree) → crea anche il link.
+  const addVista = ({ visioneId, parent = null, open = false } = {}) => {
+    const vid = visioneId || parent?.visione_id || visioni[0]?.id
+    if (!vid) { alert('Crea prima una visione.'); return }
+    setPrompt({ titolo: 'Nuova vista', label: 'Titolo della vista', valore: '', onOk: async (nome) => {
+      const v = await store.insert('viste', {
+        visione_id: vid, titolo: nome, blocchi: [{ id: 'b1', text: '' }],
+        is_template: false, livello: parent ? (parent.livello || 0) + 1 : 0,
+        parent_id: parent?.id || null, pos_x: 0, pos_y: 0, ordine: viste.length,
+      })
+      setViste(prev => [...prev, v])
+      if (parent) {
+        const lk = await store.insert('links', { da_vista: parent.id, a_vista: v.id, tipo: 'maggiore' })
+        setLinks(ls => [...ls, lk])
+      }
+      if (open) setVistaAperta(v)
     }})
   }
+
   const renameVisione = (visione) => {
     setPrompt({ titolo: 'Rinomina visione', label: 'Nome della visione', valore: visione.titolo, onOk: async (nome) => {
       await store.update('visioni', visione.id, { titolo: nome })
       setVisioni(prev => prev.map(v => v.id === visione.id ? { ...v, titolo: nome } : v))
-      setVisioneSel(prev => prev?.id === visione.id ? { ...prev, titolo: nome } : prev)
     }})
+  }
+
+  const recolorVisione = async (visione, colore) => {
+    await store.update('visioni', visione.id, { colore })
+    setVisioni(prev => prev.map(v => v.id === visione.id ? { ...v, colore } : v))
   }
 
   const saveVista = async (updated) => {
@@ -120,10 +134,34 @@ export default function App() {
     if (vistaAperta?.id === updated.id) setVistaAperta({ ...vistaAperta, ...updated })
   }
 
+  // Cambia fase (bacheca Progress). Fallback locale se manca la colonna "stage" nel DB.
+  const setStage = async (vistaId, stage) => {
+    setViste(vs => vs.map(v => v.id === vistaId ? { ...v, stage } : v))
+    try {
+      await store.update('viste', vistaId, { stage })
+    } catch (e) {
+      const map = JSON.parse(localStorage.getItem('arbora-stages') || '{}')
+      map[vistaId] = stage
+      localStorage.setItem('arbora-stages', JSON.stringify(map))
+      if (!stageWarned.current) {
+        stageWarned.current = true
+        alert('Per sincronizzare le fasi sul cloud esegui su Supabase:\nALTER TABLE public.viste ADD COLUMN IF NOT EXISTS stage text DEFAULT \'' + DEFAULT_STAGE + '\';\n(Nel frattempo le fasi sono salvate solo su questo dispositivo.)')
+      }
+    }
+  }
+
+  // Applica eventuali fasi salvate localmente (fallback)
+  const withLocalStages = (vs) => {
+    const map = JSON.parse(localStorage.getItem('arbora-stages') || '{}')
+    return vs.map(v => (v.stage == null && map[v.id]) ? { ...v, stage: map[v.id] } : v)
+  }
+
   const openByName = async (name) => {
     let target = viste.find(v => (v.titolo || '').toLowerCase() === name.toLowerCase())
     if (!target) {
-      target = await store.insert('viste', { visione_id: visioneSel.id, titolo: name, blocchi: [{id:'b1',text:''}], livello: (vistaAperta?.livello||0)+1, parent_id: vistaAperta?.id||null, pos_x: 0, pos_y: 0, ordine: viste.length })
+      const vid = vistaAperta?.visione_id || visioni[0]?.id
+      if (!vid) return
+      target = await store.insert('viste', { visione_id: vid, titolo: name, blocchi: [{id:'b1',text:''}], livello: (vistaAperta?.livello||0)+1, parent_id: vistaAperta?.id||null, pos_x: 0, pos_y: 0, ordine: viste.length })
       setViste(vs => [...vs, target])
       if (vistaAperta) {
         const lk = await store.insert('links', { da_vista: vistaAperta.id, a_vista: target.id, tipo: 'maggiore' })
@@ -136,7 +174,7 @@ export default function App() {
   const chooseTheme = (id) => { applyTheme(id); setTheme(id); }
 
   const doExport = async () => {
-    setBusy('export'); 
+    setBusy('export')
     try { await exportBackup() } finally { setBusy(''); setMenu(false) }
   }
   const doImport = async (file) => {
@@ -144,7 +182,6 @@ export default function App() {
     try {
       await importBackup(file)
       await reload()
-      setVitaSel(null); setVisioneSel(null)
       alert('Backup importato con successo.')
     } catch (e) {
       alert('Errore import: ' + (e?.message || e))
@@ -165,6 +202,8 @@ export default function App() {
     }
   }
 
+  const visteConFasi = withLocalStages(viste)
+
   if (legal) {
     return (
       <div className="app">
@@ -183,9 +222,8 @@ export default function App() {
       <div className="app">
         <div className="topbar">
           <button className="iconbtn" onClick={() => setVistaAperta(null)}>←</button>
-          <div className="brand"><span>{visioneSel?.titolo}</span></div>
+          <div className="brand"><span>{visioni.find(v => v.id === vistaAperta.visione_id)?.titolo}</span></div>
           <div className="spacer" />
-          {!focusMode && <button className="iconbtn" title="Duplica come template" onClick={() => addVista(true)}>⎘</button>}
           <button className="iconbtn" title="Focus" onClick={() => setFocusMode(f => !f)}>{focusMode ? '🔅' : '🎯'}</button>
         </div>
         <div className="content">
@@ -211,25 +249,21 @@ export default function App() {
         <button className="iconbtn" onClick={() => setMenu(true)}>☰</button>
       </div>
 
-      <div className="content">
-        {tab === 'mondi' && (
-          <Worlds vite={vite} visioni={visioni} viste={viste}
-            vitaSel={vitaSel} setVitaSel={setVitaSel}
-            visioneSel={visioneSel} setVisioneSel={setVisioneSel}
-            onOpenVista={setVistaAperta} onPreviewVista={setPreview} addVita={addVita} addVisione={addVisione} addVista={addVista}
-            renameVita={renameVita} renameVisione={renameVisione} />
+      <div className="content" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        {tab === 'pipe' && (
+          <Pipeline visioni={visioni} viste={visteConFasi}
+            onOpen={setVistaAperta} onPreview={setPreview}
+            onAddVisione={addVisione} onAddVista={(visioneId) => addVista({ visioneId })}
+            onRenameVisione={renameVisione} onRecolorVisione={recolorVisione} />
         )}
-        {tab === 'pipeline' && (
-          visioneSel ? <Pipeline viste={viste} onOpen={setVistaAperta} onAdd={() => addVista(false, { open: false })} />
-            : <Empty msg="Seleziona o crea una visione nei Mondi." />
+        {tab === 'tree' && (
+          viste.length
+            ? <Tree viste={visteConFasi} visioni={visioni} onOpen={setVistaAperta}
+                onAddChild={(parent) => addVista({ parent })} onReparent={reparent} />
+            : <Empty msg="Crea qualche vista in Pipe per vedere l'albero." />
         )}
-        {tab === 'mappa' && (
-          viste.length ? <MapView viste={viste} links={links} onOpen={setVistaAperta} onAddVista={addVista} onReparent={reparent} />
-            : <Empty msg="Crea qualche vista per vedere la mappa." />
-        )}
-        {tab === 'livelli' && (
-          viste.length ? <Levels viste={viste} links={links} onReparent={reparent} onOpen={setVistaAperta} />
-            : <Empty msg="Crea qualche vista per organizzare i livelli." />
+        {tab === 'progress' && (
+          <Progress viste={visteConFasi} onOpen={setVistaAperta} onSetStage={setStage} />
         )}
       </div>
 
@@ -284,8 +318,7 @@ export default function App() {
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h3>Menu</h3>
             <div className="menu-list">
-              <button onClick={() => { addVista(true); setMenu(false) }}>＋ Crea template</button>
-              <button onClick={() => { setThemeOpen(true) }}>🎨 Tema dell'app</button>
+              <button onClick={() => { setMenu(false); setThemeOpen(true) }}>🎨 Tema dell'app</button>
               <button onClick={doExport} disabled={busy==='export'}>⬇ Esporta backup (JSON)</button>
               <label className="menu-import">
                 ⬆ Importa backup (JSON)
@@ -301,73 +334,6 @@ export default function App() {
             </div>
           </div>
         </div>
-      )}
-    </div>
-  )
-}
-
-function Worlds({ vite, visioni, viste, vitaSel, setVitaSel, visioneSel, setVisioneSel, onOpenVista, onPreviewVista, addVita, addVisione, addVista, renameVita, renameVisione }) {
-  return (
-    <div>
-      <div className="section-head">
-        <h2>Vite</h2>
-        <span className="crumb">universi di progetti</span>
-        <div className="spacer" />
-        <button className="add-btn" onClick={addVita}>＋ Nuova vita</button>
-      </div>
-      <div className="grid-worlds">
-        {vite.map(v => (
-          <div key={v.id} className={'world-card'} onClick={() => setVitaSel(v)}
-            style={{outline: vitaSel?.id===v.id ? '2px solid var(--green-bright)' : 'none'}}>
-            <div className="swatch" style={{background:v.colore}} />
-            <button className="rename-btn" title="Rinomina" onClick={(e) => { e.stopPropagation(); renameVita(v) }}>✎</button>
-            <h3>{v.titolo}</h3>
-            <div className="count">tocca per aprire le visioni</div>
-          </div>
-        ))}
-      </div>
-
-      {vitaSel && (
-        <>
-          <div className="section-head">
-            <h2>Visioni di "{vitaSel.titolo}"</h2>
-            <span className="crumb">mondi · progetti</span>
-            <div className="spacer" />
-            <button className="add-btn" onClick={addVisione}>＋ Nuova visione</button>
-          </div>
-          <div className="grid-worlds">
-            {visioni.map(v => (
-              <div key={v.id} className="world-card" onClick={() => setVisioneSel(v)}
-                style={{outline: visioneSel?.id===v.id ? '2px solid var(--green-bright)' : 'none'}}>
-                <div className="swatch" style={{background:v.colore}} />
-                <button className="rename-btn" title="Rinomina" onClick={(e) => { e.stopPropagation(); renameVisione(v) }}>✎</button>
-                <h3>{v.titolo}</h3>
-                <div className="count">tocca per vedere le viste</div>
-              </div>
-            ))}
-            {!visioni.length && <Empty msg="Nessuna visione: creane una." />}
-          </div>
-
-          {visioneSel && (
-            <>
-              <div className="section-head">
-                <h2>Viste di "{visioneSel.titolo}"</h2>
-                <span className="crumb">fogli · note</span>
-                <div className="spacer" />
-                <button className="add-btn" onClick={() => addVista(false)}>＋ Nuova vista</button>
-              </div>
-              <div className="grid-worlds">
-                {viste.map(v => (
-                  <div key={v.id} className="world-card" onClick={() => onPreviewVista(v)}>
-                    <h3>{v.titolo || 'Senza titolo'}</h3>
-                    <div className="count">livello {v.livello || 0} · tocca per anteprima</div>
-                  </div>
-                ))}
-                {!viste.length && <Empty msg="Nessuna vista: creane una." />}
-              </div>
-            </>
-          )}
-        </>
       )}
     </div>
   )

@@ -35,6 +35,7 @@ export async function importBackup(file) {
       visione_id: map[v.visione_id], titolo: v.titolo, blocchi: v.blocchi || [],
       is_template: v.is_template, livello: v.livello || 0, parent_id: null,
       pos_x: v.pos_x || 0, pos_y: v.pos_y || 0, ordine: v.ordine || 0,
+      ...(v.stage ? { stage: v.stage } : {}),
     })
     map[v.id] = nv.id
   }

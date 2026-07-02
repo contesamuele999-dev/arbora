@@ -23,6 +23,9 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const redoStack = useRef([])
   const lastTap = useRef({ id: null, t: 0 })
   const saveTimer = useRef(null)
+  const lastEdit = useRef(null)          // ultimo blocco editato: i tasti toolbar agiscono su questo
+
+  useEffect(() => { if (editing) lastEdit.current = editing }, [editing])
 
   // re-sync se cambia la vista aperta
   useEffect(() => {
@@ -166,17 +169,19 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
       {!focusMode && (
         <>
         <div className="link-hint">💡 Scrivi <code>((Nome vista))</code> — oppure usa il tasto 🔗 — per creare un collegamento: nel testo diventa un link verde cliccabile che apre (o crea) quella vista.</div>
-        <div className="toolbar">
+        {/* onPointerDown preventDefault: il textarea non perde il focus quando si preme un tasto della toolbar */}
+        <div className="toolbar" onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()}>
           <button className="iconbtn" title="Annulla (Ctrl+Z)" onClick={undo}>↶</button>
           <button className="iconbtn" title="Ripeti (Ctrl+Y)" onClick={redo}>↷</button>
-          <button className="iconbtn" title="Titolo" onClick={() => editing && setText(editing, '# ' + (blocks.find(b=>b.id===editing)?.text||''))}>H</button>
-          <button className="iconbtn" title="Grassetto" onClick={() => editing && setText(editing, (blocks.find(b=>b.id===editing)?.text||'') + '**testo**')}><b>B</b></button>
-          <button className="iconbtn" title="Corsivo" onClick={() => editing && setText(editing, (blocks.find(b=>b.id===editing)?.text||'') + '*testo*')}><i>I</i></button>
-          <button className="iconbtn" title="Sezione / divisore" onClick={() => addBlock(editing, '---')}>—</button>
+          <button className="iconbtn" title="Titolo" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, '# ' + (blocks.find(b=>b.id===id)?.text||'')) }}>H</button>
+          <button className="iconbtn" title="Grassetto" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '**testo**') }}><b>B</b></button>
+          <button className="iconbtn" title="Corsivo" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '*testo*') }}><i>I</i></button>
+          <button className="iconbtn" title="Sezione / divisore" onClick={() => addBlock(editing || lastEdit.current, '---')}>—</button>
           <button className="iconbtn" title="Inserisci collegamento a un'altra vista" onClick={() => {
-            const cur = editing || (blocks[0] && blocks[0].id)
-            if (!editing && cur) setEditing(cur)
-            const id = cur
+            // agisce sul blocco in modifica, o sull'ultimo modificato (il blur non ci frega più)
+            const id = editing || lastEdit.current || (blocks[0] && blocks[0].id)
+            if (!id) return
+            if (!editing) setEditing(id)
             const t = blocks.find(b=>b.id===id)?.text || ''
             setText(id, t + (t && !t.endsWith(' ') ? ' ' : '') + '((Nome della vista))')
           }}>🔗</button>
