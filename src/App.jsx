@@ -6,7 +6,9 @@ import Editor from './views/Editor.jsx'
 import Pipeline from './views/Pipeline.jsx'
 import Tree from './views/Tree.jsx'
 import Progress from './views/Progress.jsx'
-import Pomodoro from './views/Pomodoro.jsx'
+import Stats from './views/Stats.jsx'
+import Profile from './views/Profile.jsx'
+import Guide from './views/Guide.jsx'
 import { Privacy, Terms } from './pages/Legal.jsx'
 import { THEMES, applyTheme, loadTheme } from './lib/themes.js'
 import { exportBackup, importBackup } from './lib/backup.js'
@@ -22,19 +24,22 @@ const TABS = [
 export default function App() {
   const { user, loading, signOut, isDemo } = useAuth()
   const [tab, setTab] = useState('pipe')
+  const [tabDir, setTabDir] = useState(0)      // -1 sx, +1 dx (per l'animazione swipe)
   const [visioni, setVisioni] = useState([])
   const [viste, setViste] = useState([])
   const [links, setLinks] = useState([])
   const [vistaAperta, setVistaAperta] = useState(null)
   const [focusMode, setFocusMode] = useState(false)
-  const [legal, setLegal] = useState(null)
+  const [page, setPage] = useState(null)       // 'privacy' | 'terms' | 'profile' | 'stats'
+  const [guide, setGuide] = useState(null)     // sezione della guida
   const [menu, setMenu] = useState(false)
+  const [fabOpen, setFabOpen] = useState(false)
   const [prompt, setPrompt] = useState(null)
   const [theme, setTheme] = useState('foresta')
   const [themeOpen, setThemeOpen] = useState(false)
   const [preview, setPreview] = useState(null)
   const [busy, setBusy] = useState('')
-  const defaultVita = useRef(null)   // vita "silente": serve solo al DB, non è più esposta in UI
+  const defaultVita = useRef(null)
   const stageWarned = useRef(false)
 
   const reload = useCallback(async () => {
@@ -51,11 +56,35 @@ export default function App() {
   useEffect(() => { setTheme(loadTheme()) }, [])
   useEffect(() => { if (user) reload() }, [user, reload])
 
+  // ---- tasto INDIETRO (mobile): chiude l'overlay in cima invece di uscire dall'app ----
+  const overlaysRef = useRef([])
+  overlaysRef.current = [
+    prompt && (() => setPrompt(null)),
+    fabOpen && (() => setFabOpen(false)),
+    themeOpen && (() => setThemeOpen(false)),
+    preview && (() => setPreview(null)),
+    guide && (() => setGuide(null)),
+    menu && (() => setMenu(false)),
+    page && (() => setPage(null)),
+    vistaAperta && (() => setVistaAperta(null)),
+  ].filter(Boolean)
+
+  useEffect(() => {
+    window.history.pushState({ arbora: true }, '')
+    const onPop = () => {
+      const top = overlaysRef.current[0]
+      if (top) { top(); window.history.pushState({ arbora: true }, '') }
+      // se non c'è nulla da chiudere lasciamo procedere (comportamento nativo)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
   // ---- swipe fra le schede ----
+  const changeTab = (next, dir) => { setTabDir(dir); setTab(next) }
   const swipe = useRef(null)
   const onTouchStart = (e) => {
     const t = e.touches[0]
-    // niente swipe se il gesto parte da un'area che gestisce il pan/scroll orizzontale
     const noswipe = e.target.closest('[data-noswipe]')
     let scroller = null
     if (noswipe?.dataset?.noswipe === 'scroll') scroller = noswipe
@@ -69,14 +98,14 @@ export default function App() {
     if (Math.abs(dx) < 70 || Math.abs(dy) > 60 || Math.abs(dx) < Math.abs(dy)) return
     if (s.scroller) {
       const el = s.scroller
-      if (el.scrollLeft !== s.sl) return                                   // lo scroller ha consumato il gesto
+      if (el.scrollLeft !== s.sl) return
       const atStart = el.scrollLeft <= 1
       const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1
-      if ((dx > 0 && !atStart) || (dx < 0 && !atEnd)) return               // può ancora scorrere
+      if ((dx > 0 && !atStart) || (dx < 0 && !atEnd)) return
     }
     const idx = TABS.findIndex(x => x.id === tab)
     const next = dx < 0 ? idx + 1 : idx - 1
-    if (next >= 0 && next < TABS.length) setTab(TABS[next].id)
+    if (next >= 0 && next < TABS.length) changeTab(TABS[next].id, dx < 0 ? 1 : -1)
   }
 
   if (loading) return <div style={{display:'grid',placeItems:'center',height:'100dvh'}}>Caricamento…</div>
@@ -97,7 +126,6 @@ export default function App() {
     }})
   }
 
-  // Crea una vista. parent: vista genitore (Tree) → crea anche il link.
   const addVista = ({ visioneId, parent = null, open = false } = {}) => {
     const vid = visioneId || parent?.visione_id || visioni[0]?.id
     if (!vid) { alert('Crea prima una visione.'); return }
@@ -134,7 +162,6 @@ export default function App() {
     if (vistaAperta?.id === updated.id) setVistaAperta({ ...vistaAperta, ...updated })
   }
 
-  // Cambia fase (bacheca Progress). Fallback locale se manca la colonna "stage" nel DB.
   const setStage = async (vistaId, stage) => {
     setViste(vs => vs.map(v => v.id === vistaId ? { ...v, stage } : v))
     try {
@@ -150,7 +177,6 @@ export default function App() {
     }
   }
 
-  // Applica eventuali fasi salvate localmente (fallback)
   const withLocalStages = (vs) => {
     const map = JSON.parse(localStorage.getItem('arbora-stages') || '{}')
     return vs.map(v => (v.stage == null && map[v.id]) ? { ...v, stage: map[v.id] } : v)
@@ -203,20 +229,28 @@ export default function App() {
   }
 
   const visteConFasi = withLocalStages(viste)
+  const pageTitles = { privacy: 'Privacy', terms: 'Termini e condizioni', profile: 'Profilo', stats: 'Statistiche' }
 
-  if (legal) {
+  // ---------- Pagine a schermo intero (profilo, statistiche, legali) ----------
+  if (page) {
     return (
       <div className="app">
         <div className="topbar">
-          <div className="brand"><img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" /><span>Arbora</span></div>
+          <button className="iconbtn" onClick={() => setPage(null)}>←</button>
+          <div className="brand"><span>{pageTitles[page]}</span></div>
           <div className="spacer" />
-          <button className="iconbtn" onClick={() => setLegal(null)}>✕</button>
         </div>
-        <div className="content">{legal === 'privacy' ? <Privacy /> : <Terms />}</div>
+        <div className="content">
+          {page === 'privacy' && <Privacy />}
+          {page === 'terms' && <Terms />}
+          {page === 'profile' && <Profile />}
+          {page === 'stats' && <Stats viste={visteConFasi} />}
+        </div>
       </div>
     )
   }
 
+  // ---------- Editor di una vista ----------
   if (vistaAperta) {
     return (
       <div className="app">
@@ -224,52 +258,73 @@ export default function App() {
           <button className="iconbtn" onClick={() => setVistaAperta(null)}>←</button>
           <div className="brand"><span>{visioni.find(v => v.id === vistaAperta.visione_id)?.titolo}</span></div>
           <div className="spacer" />
+          <button className="iconbtn" title="Guida" onClick={() => setGuide('editor')}>?</button>
           <button className="iconbtn" title="Focus" onClick={() => setFocusMode(f => !f)}>{focusMode ? '🔅' : '🎯'}</button>
         </div>
         <div className="content">
           <Editor vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} />
         </div>
-        <Pomodoro focusMode={focusMode} onToggleFocus={() => setFocusMode(f => !f)} />
         {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
+        {guide && <GuideModal section={guide} onClose={() => setGuide(null)} />}
       </div>
     )
   }
 
+  // ---------- Vista principale a schede ----------
   return (
     <div className="app">
       <div className="topbar">
         <div className="brand"><img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" /><span>Arbora</span></div>
         <div className="spacer" />
         <div className="tabs">
-          {TABS.map(t => (
-            <button key={t.id} className={'tab' + (tab === t.id ? ' active' : '')} onClick={() => setTab(t.id)}>{t.label}</button>
-          ))}
+          {TABS.map((t, i) => {
+            const cur = TABS.findIndex(x => x.id === tab)
+            return (
+              <button key={t.id} className={'tab' + (tab === t.id ? ' active' : '')}
+                onClick={() => changeTab(t.id, i > cur ? 1 : -1)}>{t.label}</button>
+            )
+          })}
         </div>
         <div className="spacer" />
+        <button className="iconbtn" title="Guida" onClick={() => setGuide(tab)}>?</button>
         <button className="iconbtn" onClick={() => setMenu(true)}>☰</button>
       </div>
 
       <div className="content" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        {tab === 'pipe' && (
-          <Pipeline visioni={visioni} viste={visteConFasi}
-            onOpen={setVistaAperta} onPreview={setPreview}
-            onAddVisione={addVisione} onAddVista={(visioneId) => addVista({ visioneId })}
-            onRenameVisione={renameVisione} onRecolorVisione={recolorVisione} />
-        )}
-        {tab === 'tree' && (
-          viste.length
-            ? <Tree viste={visteConFasi} visioni={visioni} onOpen={setVistaAperta}
-                onAddChild={(parent) => addVista({ parent })} onReparent={reparent} />
-            : <Empty msg="Crea qualche vista in Pipe per vedere l'albero." />
-        )}
-        {tab === 'progress' && (
-          <Progress viste={visteConFasi} onOpen={setVistaAperta} onSetStage={setStage} />
-        )}
+        <div key={tab} className={'tab-pane ' + (tabDir < 0 ? 'from-left' : tabDir > 0 ? 'from-right' : '')}>
+          {tab === 'pipe' && (
+            <Pipeline visioni={visioni} viste={visteConFasi}
+              onOpen={setVistaAperta} onPreview={setPreview}
+              onAddVisione={addVisione} onAddVista={(visioneId) => addVista({ visioneId })}
+              onRenameVisione={renameVisione} onRecolorVisione={recolorVisione} />
+          )}
+          {tab === 'tree' && (
+            viste.length
+              ? <Tree viste={visteConFasi} visioni={visioni} onOpen={setVistaAperta}
+                  onAddChild={(parent) => addVista({ parent })} onReparent={reparent} onQuickSave={saveVista} />
+              : <Empty msg="Crea qualche vista in Pipe per vedere l'albero." />
+          )}
+          {tab === 'progress' && (
+            <Progress viste={visteConFasi} onOpen={setVistaAperta} onSetStage={setStage} />
+          )}
+        </div>
       </div>
 
-      <Pomodoro focusMode={focusMode} onToggleFocus={() => setFocusMode(f => !f)} />
+      {/* FAB: creazione rapida di visioni/viste */}
+      <div className="fab-wrap">
+        {fabOpen && (
+          <div className="fab-menu">
+            <button onClick={() => { setFabOpen(false); addVisione() }}>🌱 Nuova visione</button>
+            <button onClick={() => { setFabOpen(false); addVista({}) }}>📄 Nuova vista</button>
+          </div>
+        )}
+        <button className={'fab' + (fabOpen ? ' open' : '')} title="Crea"
+          onClick={() => setFabOpen(o => !o)}>＋</button>
+      </div>
+      {fabOpen && <div className="fab-scrim" onClick={() => setFabOpen(false)} />}
 
       {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
+      {guide && <GuideModal section={guide} onClose={() => setGuide(null)} />}
 
       {themeOpen && (
         <div className="modal-bg" onClick={() => setThemeOpen(false)}>
@@ -299,7 +354,7 @@ export default function App() {
             <h3>{preview.titolo || 'Senza titolo'}</h3>
             <div className="preview-body rendered">
               {(preview.blocchi || []).map(b => (
-                <div key={b.id} className="preview-line">
+                <div key={b.id} className="preview-line" style={{ marginLeft: (b.indent || 0) * 18 }}>
                   {b.text ? <RenderedBlock text={b.text} /> : ''}
                 </div>
               ))}
@@ -318,6 +373,9 @@ export default function App() {
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h3>Menu</h3>
             <div className="menu-list">
+              <button onClick={() => { setMenu(false); setPage('profile') }}>👤 Profilo</button>
+              <button onClick={() => { setMenu(false); setPage('stats') }}>📊 Statistiche</button>
+              <button onClick={() => { setMenu(false); setGuide(tab) }}>❓ Guida comandi</button>
               <button onClick={() => { setMenu(false); setThemeOpen(true) }}>🎨 Tema dell'app</button>
               <button onClick={doExport} disabled={busy==='export'}>⬇ Esporta backup (JSON)</button>
               <label className="menu-import">
@@ -325,8 +383,8 @@ export default function App() {
                 <input type="file" accept="application/json" style={{display:'none'}}
                   onChange={e => e.target.files[0] && doImport(e.target.files[0])} />
               </label>
-              <button onClick={() => { setLegal('privacy'); setMenu(false) }}>Privacy</button>
-              <button onClick={() => { setLegal('terms'); setMenu(false) }}>Termini e condizioni</button>
+              <button onClick={() => { setPage('privacy'); setMenu(false) }}>Privacy</button>
+              <button onClick={() => { setPage('terms'); setMenu(false) }}>Termini e condizioni</button>
               {!isDemo && <button onClick={() => { signOut(); setMenu(false) }}>Esci ({user.email})</button>}
             </div>
             <div className="copyright" style={{marginTop:16,borderTop:'none'}}>
@@ -335,6 +393,17 @@ export default function App() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function GuideModal({ section, onClose }) {
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <Guide section={section} />
+        <div className="row"><button className="btn" onClick={onClose}>Ho capito</button></div>
+      </div>
     </div>
   )
 }

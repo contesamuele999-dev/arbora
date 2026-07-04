@@ -38,6 +38,14 @@ export function AuthProvider({ children }) {
       if (!hasSupabase) return
       await supabase.auth.signOut()
     },
+    async updateEmail(email) {
+      if (!hasSupabase) return { error: { message: 'Non disponibile in modalità demo.' } }
+      return supabase.auth.updateUser({ email })
+    },
+    async updatePassword(password) {
+      if (!hasSupabase) return { error: { message: 'Non disponibile in modalità demo.' } }
+      return supabase.auth.updateUser({ password })
+    },
   }
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>
 }

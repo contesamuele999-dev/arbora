@@ -1,23 +1,26 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { stageOf } from '../lib/stages.js'
+import { RenderedBlock } from '../lib/markdown.jsx'
 
 // ============================================================
 // TREE — albero unico delle viste, stile XMind "tree chart":
-// radice in alto a sinistra, figli impilati sotto e indentati
-// a destra, connettori a gomito arrotondati.
-// Lo sfondo dei nodi sbiadisce con la distanza dalla radice.
-// Scroll nativo (niente pan custom) + zoom con pulsanti.
+// radice in alto a sinistra, figli impilati sotto e indentati.
+// Tocca un nodo per aprire il pannello rapido: vedi e modifichi
+// il contenuto senza aprire l'editor completo. Trascina un nodo
+// su un altro per spostarlo.
 // ============================================================
 
 const ROW = 52          // altezza riga
 const INDENT = 36       // rientro per livello
 const PAD = 24
 const NODE_H = 38
+const uid = () => 'b-' + Math.random().toString(36).slice(2, 9)
 
-export default function Tree({ viste, onOpen, onAddChild, onReparent }) {
+export default function Tree({ viste, onOpen, onAddChild, onReparent, onQuickSave }) {
   const [zoom, setZoom] = useState(1)
   const [drag, setDrag] = useState(null)     // { id, x, y, over }
   const [ask, setAsk] = useState(null)       // { childId, parentId }
+  const [quick, setQuick] = useState(null)   // vista aperta nel pannello rapido
   const dragRef = useRef(null)
   const scrollRef = useRef(null)
 
@@ -45,10 +48,14 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent }) {
     return { rows, byId, childrenOf, maxDepth }
   }, [viste])
 
+  // tieni il pannello rapido sincronizzato con i dati aggiornati
+  useEffect(() => {
+    if (quick) { const fresh = viste.find(v => v.id === quick.id); if (fresh) setQuick(fresh) }
+  }, [viste]) // eslint-disable-line
+
   const xOf = (r) => PAD + r.depth * INDENT
   const yOf = (r) => PAD + r.idx * ROW
 
-  // sfumatura: vicino alla radice più intenso, poi sbiadisce
   const shade = (depth) => {
     const pct = Math.max(6, 52 - depth * 11)
     return `color-mix(in srgb, var(--green-deep) ${pct}%, var(--panel))`
@@ -72,9 +79,8 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent }) {
     const d = dragRef.current; dragRef.current = null
     const info = drag; setDrag(null)
     if (!d) return
-    if (!d.moved) { const r = byId[d.id]; if (r) onOpen(r.v); return }
+    if (!d.moved) { const r = byId[d.id]; if (r) setQuick(r.v); return }
     if (info?.over && onReparent) {
-      // impedisce cicli: il target non può essere un discendente del nodo spostato
       let p = byId[info.over]
       while (p) {
         if (p.v.id === d.id) { alert('Non puoi spostare un ramo dentro sé stesso.'); return }
@@ -102,9 +108,9 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent }) {
             {rows.map(r => {
               if (!r.v.parent_id || !byId[r.v.parent_id]) return null
               const p = byId[r.v.parent_id]
-              const x0 = xOf(p) + 14                 // parte da sotto il genitore
+              const x0 = xOf(p) + 14
               const y0 = yOf(p) + NODE_H
-              const x1 = xOf(r)                      // arriva al bordo sinistro del figlio
+              const x1 = xOf(r)
               const y1 = yOf(r) + NODE_H / 2
               const rad = 10
               return (
@@ -135,7 +141,7 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent }) {
         </div>
       </div>
 
-      <div className="tree-hint">Tocca per aprire · ＋ aggiunge un ramo · trascina un nodo su un altro per spostarlo</div>
+      <div className="tree-hint">Tocca per vedere e modificare · ＋ aggiunge un ramo · trascina un nodo su un altro per spostarlo</div>
 
       {ask && (
         <div className="modal-bg" onClick={() => setAsk(null)}>
@@ -152,11 +158,67 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent }) {
           </div>
         </div>
       )}
+
+      {quick && (
+        <QuickEdit vista={quick} onClose={() => setQuick(null)}
+          onSave={onQuickSave} onOpenFull={() => { const v = quick; setQuick(null); onOpen(v) }} />
+      )}
     </div>
   )
 }
 
-// colore linea: come i nodi ma un filo più visibile
+// Pannello rapido (bottom sheet) per vedere/modificare il contenuto di una vista.
+function QuickEdit({ vista, onClose, onSave, onOpenFull }) {
+  const [blocks, setBlocks] = useState(vista.blocchi?.length ? vista.blocchi : [{ id: uid(), text: '' }])
+  const [editing, setEditing] = useState(null)
+  const timer = useRef(null)
+
+  const persist = (next) => {
+    setBlocks(next)
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => onSave?.({ ...vista, blocchi: next }), 400)
+  }
+  const flush = () => { clearTimeout(timer.current); onSave?.({ ...vista, blocchi: blocks }) }
+
+  const setText = (id, text) => persist(blocks.map(b => b.id === id ? { ...b, text } : b))
+  const addBlock = () => { const nb = { id: uid(), text: '' }; persist([...blocks, nb]); setEditing(nb.id) }
+  const delBlock = (id) => persist(blocks.length === 1 ? [{ id: uid(), text: '' }] : blocks.filter(b => b.id !== id))
+
+  const close = () => { flush(); onClose() }
+
+  return (
+    <div className="sheet-bg" onClick={close}>
+      <div className="sheet" onClick={e => e.stopPropagation()}>
+        <div className="sheet-head">
+          <span className="sheet-grip" />
+          <h3>{vista.titolo || 'Senza titolo'}</h3>
+          <div className="spacer" />
+          <button className="iconbtn mini" title="Apri editor completo" onClick={onOpenFull}>✎</button>
+          <button className="iconbtn mini" title="Chiudi" onClick={close}>✕</button>
+        </div>
+        <div className="sheet-body">
+          {blocks.map(b => (
+            <div key={b.id} className="sheet-block">
+              {editing === b.id ? (
+                <textarea autoFocus value={b.text} rows={Math.max(1, b.text.split('\n').length)}
+                  onChange={e => setText(b.id, e.target.value)}
+                  onBlur={() => setEditing(null)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addBlock() } }} />
+              ) : (
+                <div className="rendered" onClick={() => setEditing(b.id)} style={{ marginLeft: (b.indent || 0) * 20 }}>
+                  {b.text ? <RenderedBlock text={b.text} /> : <span style={{ color: 'var(--text-dim)' }}>Vuoto — tocca per scrivere</span>}
+                </div>
+              )}
+              <button className="sheet-del" title="Elimina blocco" onClick={() => delBlock(b.id)}>✕</button>
+            </div>
+          ))}
+          <button className="add-btn" style={{ marginTop: 10 }} onClick={addBlock}>＋ Aggiungi blocco</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function shadeLine(depth) {
   const pct = Math.max(20, 70 - depth * 12)
   return `color-mix(in srgb, var(--green-bright) ${pct}%, var(--border))`

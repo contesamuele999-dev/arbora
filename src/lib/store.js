@@ -65,7 +65,7 @@ export const store = {
       return data
     }
     const db = loadLocal()
-    const newRow = { id: uid(), ...row }
+    const newRow = { id: uid(), created_at: new Date().toISOString(), ...row }
     db[table] = [...(db[table] || []), newRow]
     saveLocal(db)
     return newRow

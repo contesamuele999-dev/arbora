@@ -1,15 +1,66 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { STAGES, stageOf } from '../lib/stages.js'
 
 // ============================================================
-// PROGRESS — bacheca kanban indipendente: le viste categorizzate
-// per fase del flusso di lavoro. Drag&drop su desktop, selettore
-// fase (tocca il pallino) su touch.
+// PROGRESS — bacheca kanban. Drag pointer-based (funziona anche
+// su touch): la colonna sotto il dito si illumina, ai bordi la
+// bacheca scorre da sola. Tocco sul pallino = scelta fase rapida.
 // ============================================================
+const EDGE = 60          // zona vicino al bordo che attiva l'auto-scroll
+const SCROLL_SPEED = 14
+
 export default function Progress({ viste, onOpen, onSetStage }) {
-  const [dragId, setDragId] = useState(null)
-  const [pick, setPick] = useState(null)   // vista di cui cambiare fase
+  const [pick, setPick] = useState(null)      // vista di cui cambiare fase (menu)
+  const [drag, setDrag] = useState(null)      // { id, x, y, over }
+  const dragRef = useRef(null)
+  const kanbanRef = useRef(null)
+  const autoScroll = useRef(0)                 // -1 sx, 1 dx, 0 fermo
   const items = viste.filter(v => !v.is_template)
+
+  // Auto-scroll orizzontale continuo mentre si trascina vicino ai bordi.
+  useEffect(() => {
+    if (!drag) { autoScroll.current = 0; return }
+    let raf
+    const step = () => {
+      const el = kanbanRef.current
+      if (el && autoScroll.current) el.scrollLeft += autoScroll.current * SCROLL_SPEED
+      raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [drag])
+
+  const stageUnder = (x, y) => {
+    const el = document.elementFromPoint(x, y)
+    return el?.closest?.('.kcol')?.getAttribute('data-stage') || null
+  }
+
+  const onCardDown = (e, id) => {
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    dragRef.current = { id, sx: e.clientX, sy: e.clientY, moved: false }
+  }
+  const onCardMove = (e) => {
+    const d = dragRef.current
+    if (!d) return
+    if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 8) return
+    d.moved = true
+    // auto-scroll ai bordi della bacheca
+    const el = kanbanRef.current
+    if (el) {
+      const r = el.getBoundingClientRect()
+      if (e.clientX < r.left + EDGE) autoScroll.current = -1
+      else if (e.clientX > r.right - EDGE) autoScroll.current = 1
+      else autoScroll.current = 0
+    }
+    setDrag({ id: d.id, x: e.clientX, y: e.clientY, over: stageUnder(e.clientX, e.clientY) })
+  }
+  const onCardUp = () => {
+    const d = dragRef.current; dragRef.current = null
+    const info = drag; setDrag(null); autoScroll.current = 0
+    if (!d) return
+    if (!d.moved) { const v = items.find(x => x.id === d.id); if (v) onOpen(v); return }
+    if (info?.over) onSetStage(d.id, info.over)
+  }
 
   return (
     <div className="progress-wrap">
@@ -18,13 +69,13 @@ export default function Progress({ viste, onOpen, onSetStage }) {
         <span className="crumb">{items.length} viste nel flusso</span>
       </div>
 
-      <div className="kanban" data-noswipe="scroll">
+      <div className="kanban" data-noswipe="scroll" ref={kanbanRef}>
         {STAGES.map(s => {
           const col = items.filter(v => stageOf(v).id === s.id)
           return (
-            <div key={s.id} className="kcol" style={{ '--stage': s.color }}
-              onDragOver={e => e.preventDefault()}
-              onDrop={() => { if (dragId) onSetStage(dragId, s.id); setDragId(null) }}>
+            <div key={s.id} data-stage={s.id}
+              className={'kcol' + (drag?.over === s.id ? ' kcol-over' : '')}
+              style={{ '--stage': s.color }}>
               <div className="kcol-head">
                 <span className="stage-dot" />
                 <span>{s.label}</span>
@@ -32,10 +83,12 @@ export default function Progress({ viste, onOpen, onSetStage }) {
               </div>
               <div className="kcol-body">
                 {col.map(v => (
-                  <div key={v.id} className="kcard" style={{ '--stage': s.color }}
-                    draggable onDragStart={() => setDragId(v.id)} onDragEnd={() => setDragId(null)}
-                    onClick={() => onOpen(v)}>
+                  <div key={v.id} className={'kcard' + (drag?.id === v.id ? ' kcard-drag' : '')} style={{ '--stage': s.color }}
+                    onPointerDown={e => onCardDown(e, v.id)}
+                    onPointerMove={onCardMove}
+                    onPointerUp={onCardUp}>
                     <button className="stage-dot as-btn" title="Cambia fase"
+                      onPointerDown={e => e.stopPropagation()}
                       onClick={e => { e.stopPropagation(); setPick(v) }} />
                     <span className="kcard-title">{v.titolo || 'Senza titolo'}</span>
                   </div>
@@ -46,6 +99,10 @@ export default function Progress({ viste, onOpen, onSetStage }) {
           )
         })}
       </div>
+
+      {drag && (
+        <div className="kanban-hint">Rilascia su una colonna per cambiare fase</div>
+      )}
 
       {pick && (
         <div className="modal-bg" onClick={() => setPick(null)}>

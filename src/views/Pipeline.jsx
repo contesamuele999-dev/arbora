@@ -38,12 +38,12 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
                 const st = stageOf(v)
                 return (
                   <article key={v.id} className="vista-card" style={{ '--stage': st.color }}
-                    onClick={() => onPreview(v)}>
+                    onClick={() => onOpen(v)}>
                     <div className="vista-top">
                       <span className="stage-dot" title={st.label} />
                       <h4>{v.titolo || 'Senza titolo'}</h4>
-                      <button className="iconbtn mini" title="Apri e modifica"
-                        onClick={e => { e.stopPropagation(); onOpen(v) }}>✎</button>
+                      <button className="iconbtn mini" title="Anteprima"
+                        onClick={e => { e.stopPropagation(); onPreview(v) }}>👁</button>
                     </div>
                     <p className="vista-preview">{preview(v) || 'Vuota…'}</p>
                   </article>
