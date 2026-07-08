@@ -106,8 +106,10 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent, onQuickSav
 
           <svg width={W} height={H} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
             {rows.map(r => {
-              if (!r.v.parent_id || !byId[r.v.parent_id]) return null
-              const p = byId[r.v.parent_id]
+              if (r.type !== 'vista') return null
+              // genitore = vista madre se esiste, altrimenti la visione contenitore
+              let p = (r.v.parent_id && byVista[r.v.parent_id]) ? byVista[r.v.parent_id] : byVisione[r.v.visione_id]
+              if (!p) return null
               const x0 = xOf(p) + 14
               const y0 = yOf(p) + NODE_H
               const x1 = xOf(r)
@@ -122,9 +124,23 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent, onQuickSav
           </svg>
 
           {rows.map(r => {
+            if (r.type === 'visione') {
+              const vis = r.vis
+              return (
+                <div key={'vis-' + vis.id} data-id={vis.id} data-type="visione"
+                  className={'tnode tnode-vis' + (drag?.over === vis.id ? ' drop-on' : '')}
+                  style={{ left: xOf(r), top: yOf(r), '--vcol': vis.colore || 'var(--green)' }}>
+                  <span className="tnode-vis-ico">🌱</span>
+                  <span className="tnode-title">{vis.titolo || 'Visione'}</span>
+                  <button className="tnode-add" title="Aggiungi vista a questa visione"
+                    onPointerDown={e => e.stopPropagation()}
+                    onClick={e => { e.stopPropagation(); onAddToVisione?.(vis.id) }}>＋</button>
+                </div>
+              )
+            }
             const st = stageOf(r.v)
             return (
-              <div key={r.v.id} data-id={r.v.id}
+              <div key={r.v.id} data-id={r.v.id} data-type="vista"
                 className={'tnode' + (drag?.id === r.v.id ? ' grabbing' : '') + (drag?.over === r.v.id ? ' drop-on' : '')}
                 style={{ left: xOf(r), top: yOf(r), background: shade(r.depth) }}
                 onPointerDown={e => onNodeDown(e, r.v.id)}
@@ -148,12 +164,19 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent, onQuickSav
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h3>Spostare la vista</h3>
             <p style={{ color: 'var(--text-dim)' }}>
-              Inserire <b style={{ color: 'var(--text)' }}>{byId[ask.childId]?.v.titolo}</b> sotto{' '}
-              <b style={{ color: 'var(--text)' }}>{byId[ask.parentId]?.v.titolo}</b>?
+              Inserire <b style={{ color: 'var(--text)' }}>{byVista[ask.childId]?.v.titolo}</b> sotto{' '}
+              <b style={{ color: 'var(--text)' }}>
+                {ask.visioneId ? (byVisione[ask.visioneId]?.vis.titolo) : (byVista[ask.parentId]?.v.titolo)}
+              </b>
+              {ask.visioneId ? ' (come vista radice della visione)' : ''}?
             </p>
             <div className="row">
               <button className="btn ghost" onClick={() => setAsk(null)}>Annulla</button>
-              <button className="btn" onClick={() => { onReparent(ask.childId, ask.parentId); setAsk(null) }}>Conferma</button>
+              <button className="btn" onClick={() => {
+                if (ask.visioneId) onMoveToVisione?.(ask.childId, ask.visioneId)
+                else onReparent?.(ask.childId, ask.parentId)
+                setAsk(null)
+              }}>Conferma</button>
             </div>
           </div>
         </div>

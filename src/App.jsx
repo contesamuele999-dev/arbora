@@ -302,6 +302,17 @@ export default function App() {
     }
   }
 
+  // sposta una vista sotto un'altra VISIONE (diventa vista radice di quella visione)
+  const moveVistaToVisione = async (childId, visioneId) => {
+    const badLinks = links.filter(l => l.a_vista === childId && l.tipo === 'maggiore').map(l => l.id)
+    try {
+      await store.update('viste', childId, { visione_id: visioneId, parent_id: null, livello: 0 })
+      for (const lid of badLinks) { try { await store.remove('links', lid) } catch {} }
+    } catch (e) { alert('Errore spostamento: ' + (e?.message || e)); return }
+    setViste(vs => vs.map(v => v.id === childId ? { ...v, visione_id: visioneId, parent_id: null, livello: 0 } : v))
+    setLinks(ls => ls.filter(l => !(l.a_vista === childId && l.tipo === 'maggiore')))
+  }
+
   const visteConFasi = withLocalStages(viste)
   const pageTitles = { privacy: 'Privacy', terms: 'Termini e condizioni', profile: 'Profilo', stats: 'Statistiche' }
 
@@ -374,10 +385,12 @@ export default function App() {
               onDeleteVista={deleteVista} onDeleteVisione={deleteVisione} />
           )}
           {tab === 'tree' && (
-            viste.length
+            (visioni.length || viste.length)
               ? <Tree viste={visteConFasi} visioni={visioni} onOpen={setVistaAperta}
-                  onAddChild={(parent) => addVista({ parent })} onReparent={reparent} onQuickSave={saveVista} />
-              : <Empty msg="Crea qualche vista in Pipe per vedere l'albero." />
+                  onAddChild={(parent) => addVista({ parent })}
+                  onAddToVisione={(visioneId) => addVista({ visioneId })}
+                  onReparent={reparent} onMoveToVisione={moveVistaToVisione} onQuickSave={saveVista} />
+              : <Empty msg="Crea una visione in Pipe per vedere l'albero." />
           )}
           {tab === 'progress' && (
             <Progress viste={visteConFasi} onOpen={setVistaAperta} onSetStage={setStage} />
