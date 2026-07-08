@@ -44,8 +44,10 @@ export default function App() {
   const stageWarned = useRef(false)
 
   const reload = useCallback(async () => {
+    // resiliente: se una singola query fallisce non azzeriamo tutta l'app
+    const safe = (p) => p.catch(e => { console.warn('[reload] lettura fallita:', e?.message || e); return [] })
     const [vt, vs, allViste, allLinks] = await Promise.all([
-      store.list('vite'), store.list('visioni'), store.list('viste'), store.list('links'),
+      safe(store.list('vite')), safe(store.list('visioni')), safe(store.list('viste')), safe(store.list('links')),
     ])
     defaultVita.current = vt[0] || null
     setVisioni(vs)

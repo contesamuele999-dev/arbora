@@ -49,7 +49,11 @@ export const store = {
     if (hasSupabase) {
       let q = supabase.from(table).select('*')
       for (const [k, v] of Object.entries(filter)) q = q.eq(k, v)
-      const { data, error } = await q.order('ordine', { ascending: true }).order('created_at', { ascending: true })
+      // NB: la tabella `links` NON ha la colonna `ordine` -> ordiniamo solo per created_at,
+      // altrimenti Supabase risponde "column links.ordine does not exist" e la lettura fallisce.
+      const orderCols = table === 'links' ? ['created_at'] : ['ordine', 'created_at']
+      for (const c of orderCols) q = q.order(c, { ascending: true })
+      const { data, error } = await q
       if (error) throw error
       return data
     }
