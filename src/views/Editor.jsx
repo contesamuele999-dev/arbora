@@ -12,6 +12,10 @@ const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
 // colori delle guide di tabulazione: un colore per livello, per distinguerli a colpo d'occhio
 const GUIDE_COLORS = ['var(--green-deep)', 'var(--green)', 'var(--green-bright)', 'var(--accent)', 'var(--green)', 'var(--green-bright)']
 
+// Clipboard delle SEZIONI a livello di modulo: sopravvive al cambio vista,
+// così puoi tagliare/copiare una sezione da una vista e incollarla in un'altra.
+let SECTION_CLIP = []   // [{ text, indent }] con indent normalizzato (il più basso = 0)
+
 // Racchiude la prima occorrenza "libera" di `name` (non già dentro (( )) o [[ ]]) in un collegamento.
 function linkifyName(text, name) {
   const re = new RegExp('(?<![\\(\\[])\\b' + escapeRe(name) + '\\b(?![\\)\\]])', 'i')
@@ -27,10 +31,23 @@ const relTime = (ts) => {
   if (s < 86400) return Math.floor(s / 3600) + ' h fa'
   return Math.floor(s / 86400) + ' g fa'
 }
+const shortText = (t) => (t || '').replace(/[#*`>]/g, '').trim().slice(0, 44) || 'riga'
+
+// Divide un testo multilinea in righe con livello di rientro dedotto dagli spazi/tab iniziali
+// (2 spazi = 1 livello, oppure 1 tab = 1 livello). `base` è il rientro di partenza.
+function parseIndented(text, base = 0) {
+  return (text || '').replace(/\r/g, '').split('\n').map(line => {
+    const ws = (line.match(/^[\t ]*/) || [''])[0]
+    const tabs = (ws.match(/\t/g) || []).length
+    const spaces = ws.replace(/\t/g, '').length
+    const lvl = tabs + Math.floor(spaces / 2)
+    return { text: line.slice(ws.length), indent: Math.max(0, Math.min(MAX_INDENT, base + lvl)) }
+  })
+}
 
 // Editor della singola VISTA: blocchi markdown, drag&drop (riordino + nidificazione),
 // click=modifica · doppio click=copia · icona cestino=elimina (con recupero 7 giorni),
-// selezione multipla per ri-tabulare interi blocchi, copia intero foglio, undo/redo.
+// selezione multipla + copia/taglia/incolla di sezioni intere, undo/redo.
 export default function Editor({ vista, onChange, onWikilink, focusMode, allViste = [] }) {
   const [blocks, setBlocks] = useState(vista.blocchi?.length ? vista.blocchi : [{ id: uid(), text: '' }])
   const [title, setTitle] = useState(vista.titolo || '')
@@ -38,12 +55,14 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const [editing, setEditing] = useState(null)     // id del blocco in edit
   const [dragId, setDragId] = useState(null)
   const [dropId, setDropId] = useState(null)
+  const [ghost, setGhost] = useState(null)         // { x, y, text } fantasma che segue il cursore
   const [flash, setFlash] = useState(null)
   const [toast, setToast] = useState('')
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
   const [showTrash, setShowTrash] = useState(false)
   const [saveState, setSaveState] = useState('idle')   // idle | saving | saved | local
+  const [clipCount, setClipCount] = useState(SECTION_CLIP.length)
   const undoStack = useRef([])
   const redoStack = useRef([])
   const saveTimer = useRef(null)
@@ -65,7 +84,6 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     setEditing(null); setSelectMode(false); setSelected(new Set()); setShowTrash(false)
     prevChars.current = totalChars(vista.blocchi)
     undoStack.current = []; redoStack.current = []
-    // se la pulizia ha rimosso qualcosa, salva il cestino ripulito
     if ((vista.cestino || []).length !== cleanTrash.length) {
       onChange({ ...vista, blocchi: b, titolo: vista.titolo || '', cestino: cleanTrash })
     }
@@ -74,9 +92,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
   // salvataggio debounced (+ log caratteri scritti). Include sempre titolo e cestino correnti.
   const persist = (nextBlocks, nextTitle = title, nextTrash = trash) => {
-    // SICUREZZA ANTI-PERDITA: scrivi SUBITO e in modo SINCRONO su localStorage,
-    // a ogni battuta. Così anche un refresh immediato non perde nulla, e non
-    // dipendiamo dal debounce né dal cloud (che potrebbe fallire).
+    // SICUREZZA ANTI-PERDITA: scrivi SUBITO e in modo SINCRONO su localStorage, a ogni battuta.
     cacheVistaLocal(vista.id, { titolo: nextTitle, blocchi: nextBlocks, cestino: nextTrash })
     setSaveState('saving')
     pending.current = { blocks: nextBlocks, title: nextTitle, trash: nextTrash }
@@ -91,17 +107,15 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     }, 400)
   }
 
-  // Flush immediato: salva subito le modifiche in sospeso (uscita app / chiusura vista).
   const flush = useCallback(() => {
     if (!pending.current) return
     clearTimeout(saveTimer.current)
     const { blocks: b, title: t, trash: tr } = pending.current
     pending.current = null
-    cacheVistaLocal(vista.id, { titolo: t, blocchi: b, cestino: tr })   // scrittura sincrona di sicurezza
+    cacheVistaLocal(vista.id, { titolo: t, blocchi: b, cestino: tr })
     onChange({ ...vista, blocchi: b, titolo: t, cestino: tr })
   }, [vista, onChange])
 
-  // Salva quando l'app va in background o si chiude, e allo smontaggio.
   useEffect(() => {
     const onHide = () => { if (document.visibilityState === 'hidden') flush() }
     window.addEventListener('visibilitychange', onHide)
@@ -114,6 +128,14 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
       flush()
     }
   }, [flush])
+
+  // fantasma di trascinamento che segue il cursore durante il drag HTML5
+  useEffect(() => {
+    if (!dragId) return
+    const onOver = (e) => { if (e.clientX || e.clientY) setGhost(g => g ? { ...g, x: e.clientX, y: e.clientY } : g) }
+    document.addEventListener('dragover', onOver)
+    return () => document.removeEventListener('dragover', onOver)
+  }, [dragId])
 
   const pushUndo = (snapshot) => {
     undoStack.current.push(JSON.stringify(snapshot))
@@ -161,7 +183,6 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   }
 
   const addBlock = (afterId = null, text = '') => {
-    // il nuovo blocco eredita il rientro del blocco precedente
     const src = afterId != null ? blocks.find(b => b.id === afterId) : blocks[blocks.length - 1]
     const nb = { id: uid(), text, indent: src?.indent || 0 }
     let next
@@ -172,6 +193,23 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     }
     commit(next)
     setEditing(nb.id)
+  }
+
+  // Incolla multilinea: divide in più righe con i livelli dedotti dall'indentazione.
+  const pasteMultiline = (b, text) => {
+    let parts = parseIndented(text, b.indent || 0)
+    while (parts.length && parts[parts.length - 1].text.trim() === '') parts.pop()
+    if (!parts.length) return
+    const made = parts.map(p => ({ id: uid(), text: p.text, indent: p.indent }))
+    const idx = blocks.findIndex(x => x.id === b.id)
+    const empty = (blocks[idx]?.text || '').trim() === ''
+    const next = empty
+      ? [...blocks.slice(0, idx), ...made, ...blocks.slice(idx + 1)]      // rimpiazza il blocco vuoto
+      : [...blocks.slice(0, idx + 1), ...made, ...blocks.slice(idx + 1)]  // inserisci dopo
+    pushUndo(blocks)
+    setBlocks(next); persist(next, title, trash)
+    setEditing(null)
+    setToast(`Incollate ${made.length} righe`); setTimeout(() => setToast(''), 1300)
   }
 
   // ---- elimina riga: va nel CESTINO (recuperabile 7 giorni) ----
@@ -215,12 +253,6 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     navigator.clipboard?.writeText(text).catch(() => {})
     setToast('Foglio copiato'); setTimeout(() => setToast(''), 1200)
   }
-  const copySelected = () => {
-    const text = blocks.filter(b => selected.has(b.id)).map(b => '  '.repeat(b.indent || 0) + b.text).join('\n')
-    if (!text) return
-    navigator.clipboard?.writeText(text).catch(() => {})
-    setToast('Righe copiate'); setTimeout(() => setToast(''), 1200)
-  }
 
   // ---- click = modifica · doppio click = copia (con discriminatore) ----
   const activateBlock = (b) => {
@@ -234,10 +266,11 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     copyBlock(b)
   }
 
-  // ---- selezione multipla per ri-tabulare / copiare interi blocchi ----
+  // ---- selezione multipla ----
   const toggleSelect = (id) => setSelected(s => {
     const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n
   })
+  const selectAll = () => setSelected(new Set(blocks.map(b => b.id)))
   const indentSelected = (dir) => {
     if (!selected.size) return
     pushUndo(blocks)
@@ -249,6 +282,58 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     setBlocks(next); persist(next, title, trash)
   }
   const exitSelect = () => { setSelectMode(false); setSelected(new Set()) }
+
+  // ---- Copia / Taglia / Incolla SEZIONI (blocco + suo sotto-albero) ----
+  const expandToSection = () => {
+    if (!selected.size) return
+    const ids = new Set(selected)
+    blocks.forEach((b, i) => {
+      if (!selected.has(b.id)) return
+      const base = b.indent || 0
+      for (let j = i + 1; j < blocks.length; j++) {
+        if ((blocks[j].indent || 0) > base) ids.add(blocks[j].id)
+        else break
+      }
+    })
+    setSelected(ids)
+  }
+  const selectedInOrder = () => blocks.filter(b => selected.has(b.id))
+  const asText = (arr) => arr.map(b => '  '.repeat(b.indent || 0) + b.text).join('\n')
+  const putClip = (arr) => {
+    const min = Math.min(...arr.map(b => b.indent || 0))
+    SECTION_CLIP = arr.map(b => ({ text: b.text, indent: (b.indent || 0) - min }))
+    setClipCount(SECTION_CLIP.length)
+    navigator.clipboard?.writeText(asText(arr)).catch(() => {})
+  }
+  const copySection = () => {
+    const sel = selectedInOrder(); if (!sel.length) return
+    putClip(sel)
+    setToast(`Sezione copiata (${sel.length} righe)`); setTimeout(() => setToast(''), 1300)
+  }
+  const cutSection = () => {
+    const sel = selectedInOrder(); if (!sel.length) return
+    putClip(sel)
+    const nextTrash = [...sel.map(b => ({ ...b, deletedAt: Date.now() })), ...trash].slice(0, 200)
+    let nextBlocks = blocks.filter(b => !selected.has(b.id))
+    if (!nextBlocks.length) nextBlocks = [{ id: uid(), text: '', indent: 0 }]
+    pushUndo(blocks)
+    setBlocks(nextBlocks); setTrash(nextTrash); setSelected(new Set())
+    persist(nextBlocks, title, nextTrash)
+    setToast(`Sezione tagliata (${sel.length} righe)`); setTimeout(() => setToast(''), 1300)
+  }
+  // incolla dopo l'ultima riga selezionata (o in fondo se non c'è selezione)
+  const pasteSection = () => {
+    if (!SECTION_CLIP.length) return
+    const sel = selectedInOrder()
+    const anchor = sel.length ? sel[sel.length - 1] : blocks[blocks.length - 1]
+    const idx = anchor ? blocks.findIndex(b => b.id === anchor.id) : blocks.length - 1
+    const base = sel.length && anchor ? (anchor.indent || 0) : 0
+    const inserted = SECTION_CLIP.map(c => ({ id: uid(), text: c.text, indent: Math.min(MAX_INDENT, base + c.indent) }))
+    const next = [...blocks.slice(0, idx + 1), ...inserted, ...blocks.slice(idx + 1)]
+    pushUndo(blocks)
+    setBlocks(next); persist(next, title, trash)
+    setToast(`Incollate ${inserted.length} righe`); setTimeout(() => setToast(''), 1300)
+  }
 
   // rientro massimo consentito per un blocco: al più (rientro del precedente + 1)
   const maxIndentFor = (arr, index) => {
@@ -262,6 +347,13 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     dragStartX.current = e.clientX
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', blocks.find(b => b.id === id)?.text || '')
+    // nasconde il fantasma nativo: usiamo il nostro (.drag-ghost) che segue il cursore
+    try {
+      const img = new Image()
+      img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+      e.dataTransfer.setDragImage(img, 0, 0)
+    } catch { /* ignore */ }
+    setGhost({ x: e.clientX, y: e.clientY, text: blocks.find(b => b.id === id)?.text || '' })
   }
   const onDragOver = (e, id) => { e.preventDefault(); if (id !== dropId) setDropId(id) }
 
@@ -286,14 +378,15 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
   const onDrop = (e, id) => {
     e.preventDefault()
-    if (!dragId) { setDragId(null); setDropId(null); return }
+    if (!dragId) { setDragId(null); setDropId(null); setGhost(null); return }
     applyDrag(id, e.clientX)
-    setDragId(null); setDropId(null)
+    setDragId(null); setDropId(null); setGhost(null)
   }
+  const endDrag = () => { setDragId(null); setDropId(null); setGhost(null) }
 
   const titleChange = (v) => { setTitle(v); persist(blocks, v, trash) }
 
-  // ---- grassetto / corsivo: avvolge la selezione del textarea (Ctrl/Cmd+B / +I) ----
+  // ---- grassetto / corsivo: avvolge la selezione del textarea (Ctrl+B / Ctrl+I) ----
   const applyWrap = (el, id, mark) => {
     const s = el.selectionStart, e = el.selectionEnd, val = el.value
     const sel = val.slice(s, e) || 'testo'
@@ -348,14 +441,13 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
       {!focusMode && (
         <>
-        <div className="link-hint">💡 <b>Click</b> su una riga = modifica · <b>doppio click</b> = copia · icona 🗑 = elimina (recuperabile 7 giorni). Trascina a <b>destra/sinistra</b> per nidificare. Nel testo: <code>Ctrl/⌘+B</code> grassetto, <code>Ctrl/⌘+I</code> corsivo.</div>
-        {/* onPointerDown preventDefault: il textarea non perde il focus quando si preme un tasto della toolbar */}
+        <div className="link-hint">💡 <b>Click</b> su una riga = modifica · <b>doppio click</b> = copia · icona 🗑 = elimina (recuperabile 7 giorni). Trascina a <b>destra/sinistra</b> per nidificare. Nel testo: <code>Ctrl+B</code> grassetto, <code>Ctrl+I</code> corsivo.</div>
         <div className="toolbar" onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()}>
           <button className="iconbtn" title="Annulla (Ctrl+Z)" onClick={undo}>↶</button>
           <button className="iconbtn" title="Ripeti (Ctrl+Y)" onClick={redo}>↷</button>
           <button className="iconbtn" title="Titolo" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, '# ' + (blocks.find(b=>b.id===id)?.text||'')) }}>H</button>
-          <button className="iconbtn" title="Grassetto (Ctrl/⌘+B)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '**testo**') }}><b>B</b></button>
-          <button className="iconbtn" title="Corsivo (Ctrl/⌘+I)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '*testo*') }}><i>I</i></button>
+          <button className="iconbtn" title="Grassetto (Ctrl+B)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '**testo**') }}><b>B</b></button>
+          <button className="iconbtn" title="Corsivo (Ctrl+I)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '*testo*') }}><i>I</i></button>
           <button className="iconbtn" title="Rientra (nidifica)" onClick={() => { const id = editing || lastEdit.current; if (!id) return; const i = blocks.findIndex(b=>b.id===id); setIndent(id, Math.min(maxIndentFor(blocks, i), (blocks[i].indent||0)+1)) }}>⇥</button>
           <button className="iconbtn" title="Riduci rientro" onClick={() => { const id = editing || lastEdit.current; if (!id) return; const b = blocks.find(x=>x.id===id); setIndent(id, Math.max(0,(b.indent||0)-1)) }}>⇤</button>
           <button className="iconbtn" title="Sezione / divisore" onClick={() => addBlock(editing || lastEdit.current, '---')}>—</button>
@@ -368,21 +460,28 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           }}>🔗</button>
         </div>
 
-        {/* Riga azioni: copia foglio · selezione multipla · cestino */}
+        {/* Riga azioni: copia foglio · selezione · incolla · cestino */}
         <div className="toolbar toolbar-2" onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()}>
           {!selectMode ? (
             <>
               <button className="pillbtn" title="Copia tutto il foglio" onClick={copySheet}>⧉ Copia foglio</button>
-              <button className="pillbtn" title="Seleziona più righe per ri-tabularle insieme" onClick={() => { setSelectMode(true); setEditing(null) }}>☑ Seleziona</button>
+              <button className="pillbtn" title="Seleziona righe per copiarle/tagliarle/ri-tabularle" onClick={() => { setSelectMode(true); setEditing(null) }}>☑ Seleziona</button>
+              {clipCount > 0 && (
+                <button className="pillbtn" title="Incolla la sezione copiata in fondo alla vista" onClick={pasteSection}>📌 Incolla ({clipCount})</button>
+              )}
               <button className={'pillbtn' + (showTrash ? ' on' : '')} title="Righe eliminate (ultimi 7 giorni)" onClick={() => setShowTrash(s => !s)}>🗑 Cestino{trash.length ? ` (${trash.length})` : ''}</button>
             </>
           ) : (
             <>
-              <span className="sel-count">{selected.size} selezionate</span>
-              <button className="pillbtn" title="Aumenta rientro delle righe selezionate" onClick={() => indentSelected(1)}>⇥ Rientra</button>
-              <button className="pillbtn" title="Riduci rientro delle righe selezionate" onClick={() => indentSelected(-1)}>⇤ Riduci</button>
-              <button className="pillbtn" title="Copia le righe selezionate" onClick={copySelected}>⧉ Copia</button>
-              <button className="pillbtn danger" title="Chiudi selezione" onClick={exitSelect}>✕ Fine</button>
+              <span className="sel-count">{selected.size} sel.</span>
+              <button className="pillbtn" title="Seleziona tutte le righe" onClick={selectAll}>☑ Tutte</button>
+              <button className="pillbtn" title="Estendi alla sezione (blocco + figli)" onClick={expandToSection}>⤵ Sezione</button>
+              <button className="pillbtn" title="Aumenta rientro" onClick={() => indentSelected(1)}>⇥</button>
+              <button className="pillbtn" title="Riduci rientro" onClick={() => indentSelected(-1)}>⇤</button>
+              <button className="pillbtn" title="Copia la sezione (mantiene i livelli)" onClick={copySection}>⧉ Copia</button>
+              <button className="pillbtn" title="Taglia la sezione (va nel cestino)" onClick={cutSection}>✂ Taglia</button>
+              <button className="pillbtn" title="Incolla dopo la riga selezionata" onClick={pasteSection} disabled={!clipCount}>📌 Incolla{clipCount ? ` (${clipCount})` : ''}</button>
+              <button className="pillbtn danger" title="Chiudi selezione" onClick={exitSelect}>✕</button>
             </>
           )}
         </div>
@@ -428,7 +527,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           onDragStart={e => onDragStart(e, b.id)}
           onDragOver={e => onDragOver(e, b.id)}
           onDrop={e => onDrop(e, b.id)}
-          onDragEnd={() => { setDragId(null); setDropId(null) }}
+          onDragEnd={endDrag}
         >
           {/* guide di tabulazione: una barra colorata per livello */}
           {Array.from({ length: indent }).map((_, i) => (
@@ -444,6 +543,10 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
             <textarea autoFocus value={b.text} rows={Math.max(1, b.text.split('\n').length)}
               onChange={e => setText(b.id, e.target.value)}
               onBlur={() => setEditing(null)}
+              onPaste={e => {
+                const text = e.clipboardData?.getData('text') || ''
+                if (text.includes('\n')) { e.preventDefault(); pasteMultiline(b, text) }
+              }}
               onKeyDown={e => {
                 const el = e.target
                 if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); applyWrap(el, b.id, '**') }
@@ -469,6 +572,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
       <button className="add-btn" style={{marginTop:12}} onClick={() => addBlock(null)}>＋ Aggiungi blocco</button>
 
+      {ghost && <div className="drag-ghost" style={{ left: ghost.x + 14, top: ghost.y + 10 }}>{shortText(ghost.text)}</div>}
       {toast && <div className="editor-toast">{toast}</div>}
     </div>
   )

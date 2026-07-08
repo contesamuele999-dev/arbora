@@ -159,6 +159,12 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent, onQuickSav
 
       <div className="tree-hint">Tocca per vedere e modificare · ＋ aggiunge un ramo · trascina un nodo su un altro per spostarlo</div>
 
+      {drag && drag.x != null && (
+        <div className="drag-ghost" style={{ left: drag.x + 14, top: drag.y + 10 }}>
+          {byVista[drag.id]?.v.titolo || 'Vista'}
+        </div>
+      )}
+
       {ask && (
         <div className="modal-bg" onClick={() => setAsk(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>

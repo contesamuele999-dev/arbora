@@ -103,6 +103,11 @@ export default function Progress({ viste, onOpen, onSetStage }) {
       {drag && (
         <div className="kanban-hint">Rilascia su una colonna per cambiare fase</div>
       )}
+      {drag && drag.x != null && (
+        <div className="drag-ghost" style={{ left: drag.x + 14, top: drag.y + 10 }}>
+          {items.find(v => v.id === drag.id)?.titolo || 'Vista'}
+        </div>
+      )}
 
       {pick && (
         <div className="modal-bg" onClick={() => setPick(null)}>

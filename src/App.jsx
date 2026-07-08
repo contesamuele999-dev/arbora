@@ -90,6 +90,7 @@ export default function App() {
   // ---- swipe fra le schede ----
   const changeTab = (next, dir) => { setTabDir(dir); setTab(next) }
   const swipe = useRef(null)
+  const editSwipe = useRef(null)   // swipe fra viste dentro l'editor
   const onTouchStart = (e) => {
     const t = e.touches[0]
     const noswipe = e.target.closest('[data-noswipe]')
@@ -313,6 +314,32 @@ export default function App() {
     setLinks(ls => ls.filter(l => !(l.a_vista === childId && l.tipo === 'maggiore')))
   }
 
+  // ---- swipe fra viste (dentro l'editor): passa alla vista prec/succ della stessa visione ----
+  const openAdjacentVista = (dir) => {
+    if (!vistaAperta) return
+    const sibs = viste
+      .filter(v => v.visione_id === vistaAperta.visione_id && !v.is_template)
+      .sort((a, b) => (a.ordine || 0) - (b.ordine || 0))
+    const i = sibs.findIndex(v => v.id === vistaAperta.id)
+    if (i === -1) return
+    const j = i + dir
+    if (j < 0 || j >= sibs.length) return
+    setVistaAperta(sibs[j])
+  }
+  const onEditorTouchStart = (e) => {
+    if (e.touches.length !== 1 || e.target.closest('textarea, input, [data-noswipe]')) { editSwipe.current = null; return }
+    const t = e.touches[0]
+    editSwipe.current = { x: t.clientX, y: t.clientY }
+  }
+  const onEditorTouchEnd = (e) => {
+    const s = editSwipe.current; editSwipe.current = null
+    if (!s) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - s.x, dy = t.clientY - s.y
+    if (Math.abs(dx) < 80 || Math.abs(dy) > 55 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+    openAdjacentVista(dx < 0 ? 1 : -1)   // swipe verso sinistra = vista successiva
+  }
+
   const visteConFasi = withLocalStages(viste)
   const pageTitles = { privacy: 'Privacy', terms: 'Termini e condizioni', profile: 'Profilo', stats: 'Statistiche' }
 
@@ -346,7 +373,7 @@ export default function App() {
           <button className="iconbtn" title="Guida" onClick={() => setGuide('editor')}>?</button>
           <button className="iconbtn" title="Focus" onClick={() => setFocusMode(f => !f)}>{focusMode ? '🔅' : '🎯'}</button>
         </div>
-        <div className="content">
+        <div className="content" onTouchStart={onEditorTouchStart} onTouchEnd={onEditorTouchEnd}>
           <Editor vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} />
         </div>
         {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
@@ -545,7 +572,7 @@ function Empty({ msg }) {
   return <div style={{padding:40,textAlign:'center',color:'var(--text-dim)'}}>{msg}</div>
 }
 
-// Logo Arbora inline: usa le variabili CSS del tema (cambia colore col tema).
+// Logo Arbora inline: usa le variabili CSS del tema, cambia colore col tema.
 function BrandLogo() {
   return (
     <svg className="brand-logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">

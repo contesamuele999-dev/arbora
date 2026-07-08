@@ -99,6 +99,27 @@ a { color: var(--accent); text-decoration: none; }
 
 /* ---------- Pipe: visioni (contenitori tinti) + viste (card neutre) ---------- */
 .pipe { padding-bottom: 100px; }
+
+/* barra di ricerca */
+.pipe-search {
+  display: flex; align-items: center; gap: 8px; margin: 4px 18px 6px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px;
+}
+.pipe-search:focus-within { border-color: var(--green); }
+.pipe-search-ico { flex: 0 0 auto; opacity: .8; font-size: 14px; }
+.pipe-search-input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--text); font-size: 14px; }
+.pipe-search-clear { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 7px; background: var(--bg-2); color: var(--text-dim); border: 1px solid var(--border); font-size: 12px; }
+.pipe-search-clear:hover { border-color: var(--green); color: var(--text); }
+
+/* fantasma di trascinamento che segue il cursore (Editor, Tree, Progress) */
+.drag-ghost {
+  position: fixed; z-index: 90; pointer-events: none;
+  max-width: 260px; padding: 6px 12px; border-radius: 10px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--green-bright);
+  box-shadow: 0 8px 24px rgba(0,0,0,.4); font-size: 13px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transform: translateZ(0);
+}
 .vision-block {
   margin: 14px 18px; border-radius: var(--radius); border: 1px solid var(--border);
   background: linear-gradient(160deg, color-mix(in srgb, var(--vcol) 14%, var(--panel-2)), var(--panel));
@@ -394,13 +415,15 @@ a { color: var(--accent); text-decoration: none; }
   border: 1px solid color-mix(in srgb, var(--green-deep) 55%, transparent); border-radius: 6px; user-select: none;
 }
 
-/* icona elimina riga */
+/* icona elimina riga — sempre visibile e chiaramente "rossa" */
 .block .row-del {
-  width: 28px; height: 28px; font-size: 13px; flex: 0 0 auto; opacity: 0; transition: opacity .12s, border-color .12s, color .12s;
+  width: 28px; height: 28px; font-size: 14px; flex: 0 0 auto; opacity: .7;
+  color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+  transition: opacity .12s, border-color .12s, background .12s;
 }
 .block:hover .row-del, .block.selected .row-del { opacity: 1; }
-.block .row-del:hover { border-color: var(--danger); color: var(--danger); }
-@media (hover: none) { .block .row-del { opacity: 1; } }   /* su touch sempre visibile */
+.block .row-del:hover { opacity: 1; border-color: var(--danger); background: color-mix(in srgb, var(--danger) 20%, var(--panel)); }
 
 /* selezione multipla */
 .block.selected { background: color-mix(in srgb, var(--green-bright) 12%, var(--bg-2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green-bright) 45%, transparent); }
@@ -423,7 +446,16 @@ a { color: var(--accent); text-decoration: none; }
 .sel-count { font-size: 12.5px; color: var(--text-dim); font-weight: 700; margin-right: 2px; }
 
 .iconbtn.mini { width: 28px; height: 28px; font-size: 12px; border-radius: 8px; }
-.iconbtn.mini.danger:hover, .iconbtn.danger:hover { border-color: var(--danger); color: var(--danger); }
+/* pulsanti-icona "elimina": rossi e ben visibili anche a riposo */
+.iconbtn.danger, .iconbtn.mini.danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--panel));
+}
+.iconbtn.mini.danger:hover, .iconbtn.danger:hover {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 22%, var(--panel));
+}
 
 /* pannello cestino */
 .trash-panel {
