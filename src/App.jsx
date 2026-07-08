@@ -416,7 +416,8 @@ export default function App() {
               ? <Tree viste={visteConFasi} visioni={visioni} onOpen={setVistaAperta}
                   onAddChild={(parent) => addVista({ parent })}
                   onAddToVisione={(visioneId) => addVista({ visioneId })}
-                  onReparent={reparent} onMoveToVisione={moveVistaToVisione} onQuickSave={saveVista} />
+                  onReparent={reparent} onMoveToVisione={moveVistaToVisione} onQuickSave={saveVista}
+                  onDeleteVista={deleteVista} />
               : <Empty msg="Crea una visione in Pipe per vedere l'albero." />
           )}
           {tab === 'progress' && (

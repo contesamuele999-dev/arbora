@@ -16,7 +16,7 @@ const PAD = 24
 const NODE_H = 38
 const uid = () => 'b-' + Math.random().toString(36).slice(2, 9)
 
-export default function Tree({ viste, visioni = [], onOpen, onAddChild, onAddToVisione, onReparent, onMoveToVisione, onQuickSave }) {
+export default function Tree({ viste, visioni = [], onOpen, onAddChild, onAddToVisione, onReparent, onMoveToVisione, onQuickSave, onDeleteVista }) {
   const [zoom, setZoom] = useState(1)
   const [drag, setDrag] = useState(null)     // { id, x, y, over, overType }
   const [ask, setAsk] = useState(null)       // { childId, parentId } | { childId, visioneId }
@@ -208,14 +208,15 @@ export default function Tree({ viste, visioni = [], onOpen, onAddChild, onAddToV
 
       {quick && (
         <QuickEdit vista={quick} onClose={() => setQuick(null)}
-          onSave={onQuickSave} onOpenFull={() => { const v = quick; setQuick(null); onOpen(v) }} />
+          onSave={onQuickSave} onOpenFull={() => { const v = quick; setQuick(null); onOpen(v) }}
+          onDelete={() => { const v = quick; setQuick(null); onDeleteVista?.(v) }} />
       )}
     </div>
   )
 }
 
 // Pannello rapido (bottom sheet) per vedere/modificare il contenuto di una vista.
-function QuickEdit({ vista, onClose, onSave, onOpenFull }) {
+function QuickEdit({ vista, onClose, onSave, onOpenFull, onDelete }) {
   const [blocks, setBlocks] = useState(vista.blocchi?.length ? vista.blocchi : [{ id: uid(), text: '' }])
   const [editing, setEditing] = useState(null)
   const timer = useRef(null)
@@ -241,6 +242,7 @@ function QuickEdit({ vista, onClose, onSave, onOpenFull }) {
           <h3>{vista.titolo || 'Senza titolo'}</h3>
           <div className="spacer" />
           <button className="iconbtn mini" title="Apri editor completo" onClick={onOpenFull}>✎</button>
+          <button className="iconbtn mini danger" title="Elimina vista" onClick={() => onDelete?.()}>🗑</button>
           <button className="iconbtn mini" title="Chiudi" onClick={close}>✕</button>
         </div>
         <div className="sheet-body">
