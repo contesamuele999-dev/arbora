@@ -51,6 +51,7 @@ create table if not exists public.viste (
   ordine      int  default 0,
   parent_id   uuid references public.viste(id) on delete set null,
   stage       text default 'idee',   -- fase kanban (bacheca Progress)
+  cestino     jsonb default '[]'::jsonb,   -- righe eliminate, recuperabili 7 giorni
   pos_x       float default 0,   -- posizione nella mappa 2.5D
   pos_y       float default 0,
   created_at  timestamptz default now(),

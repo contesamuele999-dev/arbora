@@ -14,6 +14,7 @@ import { THEMES, applyTheme, loadTheme } from './lib/themes.js'
 import { exportBackup, importBackup } from './lib/backup.js'
 import { RenderedBlock } from './lib/markdown.jsx'
 import { DEFAULT_STAGE } from './lib/stages.js'
+import { cacheVistaLocal, markVistaSynced, mergeVisteWithCache, flushDirtyToCloud, cestinoDisabled, disableCestinoCloud, isMissingCestino } from './lib/localcache.js'
 
 const TABS = [
   { id: 'pipe', label: 'Pipe' },
@@ -48,9 +49,11 @@ export default function App() {
     ])
     defaultVita.current = vt[0] || null
     setVisioni(vs)
-    setViste(allViste)
-    const ids = new Set(allViste.map(v => v.id))
+    const merged = mergeVisteWithCache(allViste)   // ripristina modifiche locali non ancora confermate
+    setViste(merged)
+    const ids = new Set(merged.map(v => v.id))
     setLinks(allLinks.filter(l => ids.has(l.da_vista) && ids.has(l.a_vista)))
+    flushDirtyToCloud(store)   // ri-spedisce in background ciò che non era stato salvato sul cloud
   }, [])
 
   useEffect(() => { setTheme(loadTheme()) }, [])
@@ -157,9 +160,29 @@ export default function App() {
   }
 
   const saveVista = async (updated) => {
-    await store.update('viste', updated.id, { titolo: updated.titolo, blocchi: updated.blocchi })
+    // 1) mirror SINCRONO in locale: sopravvive a refresh/chiusura anche se il cloud fallisce
+    cacheVistaLocal(updated.id, { titolo: updated.titolo, blocchi: updated.blocchi, ...(updated.cestino !== undefined ? { cestino: updated.cestino } : {}) })
+    // 2) aggiornamento ottimistico della UI
     setViste(vs => vs.map(v => v.id === updated.id ? { ...v, ...updated } : v))
-    if (vistaAperta?.id === updated.id) setVistaAperta({ ...vistaAperta, ...updated })
+    setVistaAperta(va => (va && va.id === updated.id) ? { ...va, ...updated } : va)
+    // 3) salvataggio cloud (best-effort, con fallback se la colonna cestino non esiste)
+    const patch = { titolo: updated.titolo, blocchi: updated.blocchi }
+    if (updated.cestino !== undefined && !cestinoDisabled()) patch.cestino = updated.cestino
+    try {
+      await store.update('viste', updated.id, patch)
+      markVistaSynced(updated.id)
+    } catch (e) {
+      if (isMissingCestino(e) && updated.cestino !== undefined) {
+        disableCestinoCloud()
+        try {
+          await store.update('viste', updated.id, { titolo: updated.titolo, blocchi: updated.blocchi })
+          markVistaSynced(updated.id)   // testo salvato; il cestino resta in cache locale
+          return
+        } catch (e2) { console.warn('Salvataggio cloud fallito (conservato in locale):', e2) }
+      } else {
+        console.warn('Salvataggio cloud fallito (conservato in locale):', e)
+      }
+    }
   }
 
   const setStage = async (vistaId, stage) => {
@@ -274,7 +297,7 @@ export default function App() {
   return (
     <div className="app">
       <div className="topbar">
-        <div className="brand"><img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" /><span>Arbora</span></div>
+        <div className="brand"><BrandLogo /><span>Arbora</span></div>
         <div className="spacer" />
         <div className="tabs">
           {TABS.map((t, i) => {
@@ -438,4 +461,30 @@ function NamePrompt({ data, onClose }) {
 
 function Empty({ msg }) {
   return <div style={{padding:40,textAlign:'center',color:'var(--text-dim)'}}>{msg}</div>
+}
+
+// Logo Arbora inline: usa le variabili CSS del tema (cambia colore col tema).
+function BrandLogo() {
+  return (
+    <svg className="brand-logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect width="512" height="512" rx="112" fill="var(--panel-2)" stroke="var(--border)" strokeWidth="6" />
+      <g stroke="var(--green)" strokeWidth="14" strokeLinecap="round" fill="none" opacity="0.9">
+        <path d="M256 392 L256 300" />
+        <path d="M256 300 L160 220" />
+        <path d="M256 300 L352 220" />
+        <path d="M160 220 L112 150" />
+        <path d="M160 220 L208 150" />
+        <path d="M352 220 L304 150" />
+        <path d="M352 220 L400 150" />
+      </g>
+      <circle cx="256" cy="408" r="30" fill="var(--green-deep)" />
+      <circle cx="256" cy="300" r="22" fill="var(--green)" />
+      <circle cx="160" cy="220" r="20" fill="var(--green)" />
+      <circle cx="352" cy="220" r="20" fill="var(--green)" />
+      <circle cx="112" cy="150" r="18" fill="var(--green-bright)" />
+      <circle cx="208" cy="150" r="18" fill="var(--green-bright)" />
+      <circle cx="304" cy="150" r="18" fill="var(--green-bright)" />
+      <circle cx="400" cy="150" r="18" fill="var(--green-bright)" />
+    </svg>
+  )
 }

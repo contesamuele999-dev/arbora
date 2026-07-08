@@ -28,6 +28,17 @@ body {
 button { font-family: inherit; cursor: pointer; border: none; }
 a { color: var(--accent); text-decoration: none; }
 
+/* ---------- Scrollbar uniformi (a tema) ---------- */
+* { scrollbar-width: thin; scrollbar-color: var(--green-deep) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--green-deep) 70%, var(--border));
+  border-radius: 999px; border: 2px solid transparent; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--green); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
 /* ---------- App shell ---------- */
 .app { display: flex; flex-direction: column; height: 100dvh; }
 .topbar {
@@ -38,7 +49,8 @@ a { color: var(--accent); text-decoration: none; }
   position: sticky; top: 0; z-index: 20;
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .3px; }
-.brand img { width: 28px; height: 28px; }
+.brand img, .brand-logo { width: 28px; height: 28px; }
+.brand-logo { display: block; border-radius: 8px; transition: filter .2s; }
 .brand span { font-size: 18px; }
 .spacer { flex: 1; }
 
@@ -310,9 +322,9 @@ a { color: var(--accent); text-decoration: none; }
 /* ---------- Ottimizzazione telefono ---------- */
 @media (max-width: 560px) {
   .topbar { padding: 8px 10px; gap: 8px; }
-  .brand img { width: 24px; height: 24px; }
+  .brand img, .brand-logo { width: 24px; height: 24px; }
   .brand span { font-size: 16px; }
-  .brand img + span { display: none; }         /* nasconde solo il wordmark "Arbora", non il titolo visione */
+  .brand img + span, .brand-logo + span { display: none; }   /* nasconde solo il wordmark "Arbora", non il titolo visione */
   .topbar .spacer { flex: 1 1 auto; }
   .tabs { padding: 3px; gap: 2px; }
   .tab { padding: 6px 9px; font-size: 12px; }
@@ -348,8 +360,70 @@ a { color: var(--accent); text-decoration: none; }
 @keyframes slideFromLeft { from { transform: translateX(-28px); opacity: .3; } to { transform: translateX(0); opacity: 1; } }
 
 /* ---------- Editor: blocchi nidificati ---------- */
-.block.nested { border-left: 2px solid color-mix(in srgb, var(--green-deep) 40%, transparent); }
 .nest-bullet { color: var(--green-bright); font-size: 18px; line-height: 1.4; padding: 2px 2px 0 2px; flex: 0 0 auto; user-select: none; }
+
+/* guide di tabulazione: una barra verticale colorata per livello */
+.indent-guide {
+  flex: 0 0 auto; width: 22px; align-self: stretch; margin: 2px 0;
+  border-left: 2px solid var(--green-deep); border-radius: 2px;
+}
+.level-badge {
+  flex: 0 0 auto; min-width: 16px; height: 16px; padding: 0 4px; margin-top: 3px;
+  display: grid; place-items: center; font-size: 10px; font-weight: 800; line-height: 1;
+  color: var(--green-bright); background: color-mix(in srgb, var(--green-deep) 25%, var(--bg-2));
+  border: 1px solid color-mix(in srgb, var(--green-deep) 55%, transparent); border-radius: 6px; user-select: none;
+}
+
+/* icona elimina riga */
+.block .row-del {
+  width: 28px; height: 28px; font-size: 13px; flex: 0 0 auto; opacity: 0; transition: opacity .12s, border-color .12s, color .12s;
+}
+.block:hover .row-del, .block.selected .row-del { opacity: 1; }
+.block .row-del:hover { border-color: var(--danger); color: var(--danger); }
+@media (hover: none) { .block .row-del { opacity: 1; } }   /* su touch sempre visibile */
+
+/* selezione multipla */
+.block.selected { background: color-mix(in srgb, var(--green-bright) 12%, var(--bg-2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green-bright) 45%, transparent); }
+.sel-box {
+  flex: 0 0 auto; width: 22px; height: 22px; margin-top: 3px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-2); color: var(--green-bright);
+  display: grid; place-items: center; font-size: 13px; font-weight: 800; cursor: pointer;
+}
+.sel-box.on { border-color: var(--green-bright); background: color-mix(in srgb, var(--green-bright) 20%, var(--bg-2)); }
+
+/* seconda barra strumenti (azioni sui blocchi) */
+.toolbar-2 { margin-top: -6px; margin-bottom: 14px; align-items: center; }
+.pillbtn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--border); color: var(--text); font-size: 12.5px; font-weight: 600; transition: .15s;
+}
+.pillbtn:hover { border-color: var(--green); }
+.pillbtn.on { border-color: var(--green-bright); background: color-mix(in srgb, var(--green-bright) 14%, var(--panel)); color: var(--green-bright); }
+.pillbtn.danger:hover { border-color: var(--danger); color: var(--danger); }
+.sel-count { font-size: 12.5px; color: var(--text-dim); font-weight: 700; margin-right: 2px; }
+
+.iconbtn.mini { width: 28px; height: 28px; font-size: 12px; border-radius: 8px; }
+.iconbtn.mini.danger:hover, .iconbtn.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+/* pannello cestino */
+.trash-panel {
+  margin: -4px 0 16px; padding: 12px 14px; border-radius: 12px;
+  background: var(--bg-2); border: 1px solid var(--border); animation: drop .18s ease;
+}
+.trash-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.trash-sub { font-size: 11.5px; color: var(--text-dim); flex: 1; }
+.trash-empty { font-size: 13px; color: var(--text-dim); padding: 6px 2px; }
+.trash-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
+.trash-text { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trash-when { font-size: 11px; color: var(--text-dim); flex: 0 0 auto; }
+
+/* toast copia/ripristino */
+.editor-toast {
+  position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%); z-index: 60;
+  background: var(--panel); border: 1px solid var(--green-deep); border-radius: 999px;
+  padding: 8px 16px; font-size: 12.5px; color: var(--text); box-shadow: var(--shadow);
+  pointer-events: none; animation: drop .2s ease;
+}
 
 /* ---------- Progress: evidenziazione colonna + hint ---------- */
 .kcol { transition: box-shadow .15s, border-color .15s, background .15s; }
