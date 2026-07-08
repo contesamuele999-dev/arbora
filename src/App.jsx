@@ -36,6 +36,7 @@ export default function App() {
   const [menu, setMenu] = useState(false)
   const [fabOpen, setFabOpen] = useState(false)
   const [prompt, setPrompt] = useState(null)
+  const [confirm, setConfirm] = useState(null)
   const [theme, setTheme] = useState('foresta')
   const [themeOpen, setThemeOpen] = useState(false)
   const [preview, setPreview] = useState(null)
@@ -64,6 +65,7 @@ export default function App() {
   // ---- tasto INDIETRO (mobile): chiude l'overlay in cima invece di uscire dall'app ----
   const overlaysRef = useRef([])
   overlaysRef.current = [
+    confirm && (() => setConfirm(null)),
     prompt && (() => setPrompt(null)),
     fabOpen && (() => setFabOpen(false)),
     themeOpen && (() => setThemeOpen(false)),
@@ -159,6 +161,51 @@ export default function App() {
   const recolorVisione = async (visione, colore) => {
     await store.update('visioni', visione.id, { colore })
     setVisioni(prev => prev.map(v => v.id === visione.id ? { ...v, colore } : v))
+  }
+
+  // ---- Eliminazione rapida (con conferma) ----
+  const deleteVista = (vista) => {
+    setConfirm({
+      titolo: 'Eliminare la vista?',
+      messaggio: `"${vista.titolo || 'Senza titolo'}" verrà eliminata definitivamente.`,
+      okLabel: 'Elimina',
+      onOk: async () => {
+        const childIds = viste.filter(v => v.parent_id === vista.id).map(v => v.id)
+        const badLinks = links.filter(l => l.da_vista === vista.id || l.a_vista === vista.id).map(l => l.id)
+        try {
+          await store.remove('viste', vista.id)
+          for (const cid of childIds) { try { await store.update('viste', cid, { parent_id: null }) } catch {} }
+          for (const lid of badLinks) { try { await store.remove('links', lid) } catch {} }
+        } catch (e) { alert('Errore eliminazione: ' + (e?.message || e)); return }
+        setViste(vs => vs.filter(v => v.id !== vista.id).map(v => v.parent_id === vista.id ? { ...v, parent_id: null } : v))
+        setLinks(ls => ls.filter(l => l.da_vista !== vista.id && l.a_vista !== vista.id))
+        if (vistaAperta?.id === vista.id) setVistaAperta(null)
+      },
+    })
+  }
+
+  const deleteVisione = (vis) => {
+    const mie = viste.filter(v => v.visione_id === vis.id)
+    const mieIds = new Set(mie.map(v => v.id))
+    setConfirm({
+      titolo: 'Eliminare la visione?',
+      messaggio: mie.length
+        ? `"${vis.titolo}" e le sue ${mie.length} vist${mie.length === 1 ? 'a' : 'e'} verranno eliminate definitivamente.`
+        : `"${vis.titolo}" verrà eliminata definitivamente.`,
+      okLabel: 'Elimina tutto',
+      onOk: async () => {
+        const badLinks = links.filter(l => mieIds.has(l.da_vista) || mieIds.has(l.a_vista)).map(l => l.id)
+        try {
+          await store.remove('visioni', vis.id)          // cloud: cascade su viste e links
+          for (const v of mie) { try { await store.remove('viste', v.id) } catch {} }   // demo/cleanup
+          for (const lid of badLinks) { try { await store.remove('links', lid) } catch {} }
+        } catch (e) { alert('Errore eliminazione: ' + (e?.message || e)); return }
+        setViste(vs => vs.filter(v => v.visione_id !== vis.id))
+        setVisioni(vs => vs.filter(v => v.id !== vis.id))
+        setLinks(ls => ls.filter(l => !mieIds.has(l.da_vista) && !mieIds.has(l.a_vista)))
+        if (vistaAperta && mieIds.has(vistaAperta.id)) setVistaAperta(null)
+      },
+    })
   }
 
   const saveVista = async (updated) => {
@@ -323,7 +370,8 @@ export default function App() {
             <Pipeline visioni={visioni} viste={visteConFasi}
               onOpen={setVistaAperta} onPreview={setPreview}
               onAddVisione={addVisione} onAddVista={(visioneId) => addVista({ visioneId })}
-              onRenameVisione={renameVisione} onRecolorVisione={recolorVisione} />
+              onRenameVisione={renameVisione} onRecolorVisione={recolorVisione}
+              onDeleteVista={deleteVista} onDeleteVisione={deleteVisione} />
           )}
           {tab === 'tree' && (
             viste.length
@@ -351,6 +399,7 @@ export default function App() {
       {fabOpen && <div className="fab-scrim" onClick={() => setFabOpen(false)} />}
 
       {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
+      {confirm && <ConfirmModal data={confirm} onClose={() => setConfirm(null)} />}
       {guide && <GuideModal section={guide} onClose={() => setGuide(null)} />}
 
       {themeOpen && (
@@ -457,6 +506,22 @@ function NamePrompt({ data, onClose }) {
         <div className="row">
           <button className="btn ghost" onClick={onClose}>Annulla</button>
           <button className="btn" onClick={ok}>Conferma</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ConfirmModal({ data, onClose }) {
+  const ok = async () => { await data.onOk(); onClose() }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h3>{data.titolo}</h3>
+        <p style={{ color: 'var(--text-dim)', lineHeight: 1.5, margin: '0 0 4px' }}>{data.messaggio}</p>
+        <div className="row">
+          <button className="btn ghost" onClick={onClose}>Annulla</button>
+          <button className="btn danger" onClick={ok}>{data.okLabel || 'Elimina'}</button>
         </div>
       </div>
     </div>

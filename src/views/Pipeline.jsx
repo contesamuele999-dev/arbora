@@ -4,7 +4,7 @@ import { stageOf } from '../lib/stages.js'
 // PIPE — visioni (contenitori, sfondo tinto col loro colore)
 // e viste (card neutre con indicatore colore della fase).
 // ============================================================
-export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisione, onAddVista, onRenameVisione, onRecolorVisione }) {
+export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisione, onAddVista, onRenameVisione, onRecolorVisione, onDeleteVista, onDeleteVisione }) {
   const preview = (v) => (v.blocchi || []).map(b => b.text).join(' ').replace(/[#*`>]/g, '').slice(0, 140)
 
   return (
@@ -28,6 +28,7 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
               </label>
               <h3>{vis.titolo}</h3>
               <button className="iconbtn mini" title="Rinomina" onClick={() => onRenameVisione(vis)}>✎</button>
+              <button className="iconbtn mini danger" title="Elimina visione (e tutte le sue viste)" onClick={() => onDeleteVisione(vis)}>🗑</button>
               <div className="spacer" />
               <span className="crumb">{mie.length} viste</span>
               <button className="add-btn mini" onClick={() => onAddVista(vis.id)}>＋ Vista</button>
@@ -44,6 +45,8 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
                       <h4>{v.titolo || 'Senza titolo'}</h4>
                       <button className="iconbtn mini" title="Anteprima"
                         onClick={e => { e.stopPropagation(); onPreview(v) }}>👁</button>
+                      <button className="iconbtn mini danger" title="Elimina vista"
+                        onClick={e => { e.stopPropagation(); onDeleteVista(v) }}>🗑</button>
                     </div>
                     <p className="vista-preview">{preview(v) || 'Vuota…'}</p>
                   </article>

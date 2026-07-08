@@ -92,6 +92,7 @@ a { color: var(--accent); text-decoration: none; }
 }
 .btn:hover { filter: brightness(1.05); }
 .btn.ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+.btn.danger { background: linear-gradient(135deg, #e0604d, #b3372a); color: #fff; }
 .link-btn { background: none; color: var(--accent); font-size: 13px; padding: 8px 0; }
 .err { color: var(--danger); font-size: 13px; margin: 8px 0; }
 .demo-badge { font-size: 11px; color: var(--green-bright); border: 1px solid var(--green-deep); padding: 3px 8px; border-radius: 999px; }
