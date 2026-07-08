@@ -171,17 +171,19 @@ export default function App() {
     try {
       await store.update('viste', updated.id, patch)
       markVistaSynced(updated.id)
+      return 'cloud'
     } catch (e) {
       if (isMissingCestino(e) && updated.cestino !== undefined) {
         disableCestinoCloud()
         try {
           await store.update('viste', updated.id, { titolo: updated.titolo, blocchi: updated.blocchi })
           markVistaSynced(updated.id)   // testo salvato; il cestino resta in cache locale
-          return
+          return 'cloud'
         } catch (e2) { console.warn('Salvataggio cloud fallito (conservato in locale):', e2) }
       } else {
         console.warn('Salvataggio cloud fallito (conservato in locale):', e)
       }
+      return 'local'   // il dato è comunque al sicuro in localStorage
     }
   }
 

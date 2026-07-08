@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { RenderedBlock } from '../lib/markdown.jsx'
 import { logChars } from '../lib/activity.js'
+import { cacheVistaLocal } from '../lib/localcache.js'
 
 const uid = () => 'b-' + Math.random().toString(36).slice(2, 9)
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -42,6 +43,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
   const [showTrash, setShowTrash] = useState(false)
+  const [saveState, setSaveState] = useState('idle')   // idle | saving | saved | local
   const undoStack = useRef([])
   const redoStack = useRef([])
   const saveTimer = useRef(null)
@@ -72,14 +74,20 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
   // salvataggio debounced (+ log caratteri scritti). Include sempre titolo e cestino correnti.
   const persist = (nextBlocks, nextTitle = title, nextTrash = trash) => {
+    // SICUREZZA ANTI-PERDITA: scrivi SUBITO e in modo SINCRONO su localStorage,
+    // a ogni battuta. Così anche un refresh immediato non perde nulla, e non
+    // dipendiamo dal debounce né dal cloud (che potrebbe fallire).
+    cacheVistaLocal(vista.id, { titolo: nextTitle, blocchi: nextBlocks, cestino: nextTrash })
+    setSaveState('saving')
     pending.current = { blocks: nextBlocks, title: nextTitle, trash: nextTrash }
     const now = totalChars(nextBlocks)
     logChars(now - prevChars.current)
     prevChars.current = now
     clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => {
+    saveTimer.current = setTimeout(async () => {
       pending.current = null
-      onChange({ ...vista, blocchi: nextBlocks, titolo: nextTitle, cestino: nextTrash })
+      const r = await onChange({ ...vista, blocchi: nextBlocks, titolo: nextTitle, cestino: nextTrash })
+      setSaveState(r === 'local' ? 'local' : 'saved')
     }, 400)
   }
 
@@ -89,6 +97,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     clearTimeout(saveTimer.current)
     const { blocks: b, title: t, trash: tr } = pending.current
     pending.current = null
+    cacheVistaLocal(vista.id, { titolo: t, blocchi: b, cestino: tr })   // scrittura sincrona di sicurezza
     onChange({ ...vista, blocchi: b, titolo: t, cestino: tr })
   }, [vista, onChange])
 
@@ -324,8 +333,18 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
   return (
     <div className="editor">
-      <input className="editor-title" value={title} placeholder="Titolo della vista…"
-        onChange={e => titleChange(e.target.value)} />
+      <div className="editor-head">
+        <input className="editor-title" value={title} placeholder="Titolo della vista…"
+          onChange={e => titleChange(e.target.value)} />
+        <span className={'save-state ' + saveState} title={
+          saveState === 'saved' ? 'Salvato nel cloud' :
+          saveState === 'local' ? 'Salvato su questo dispositivo (cloud non raggiungibile)' :
+          saveState === 'saving' ? 'Salvataggio…' : ''}>
+          {saveState === 'saving' && '⏳ Salvataggio…'}
+          {saveState === 'saved' && '✓ Salvato'}
+          {saveState === 'local' && '✓ Salvato (dispositivo)'}
+        </span>
+      </div>
 
       {!focusMode && (
         <>

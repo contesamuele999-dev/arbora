@@ -1,5 +1,6 @@
 // Import/Export di tutti i dati dell'utente in un singolo file JSON.
 import { store } from './store.js'
+import { cacheVistaLocal } from './localcache.js'
 
 export async function exportBackup() {
   let data
@@ -85,6 +86,8 @@ export async function importBackup(file) {
       nv = await store.insert('viste', base)
     }
     map[v.id] = nv.id
+    // rete di sicurezza: cache locale, così la vista importata sopravvive al refresh anche se il cloud non conferma
+    cacheVistaLocal(nv.id, { titolo: base.titolo, blocchi: base.blocchi, ...(v.cestino ? { cestino: v.cestino } : {}) })
   }
   // seconda passata: collega parent_id
   for (const v of data.viste || []) {
