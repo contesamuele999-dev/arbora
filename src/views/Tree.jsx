@@ -3,11 +3,11 @@ import { stageOf } from '../lib/stages.js'
 import { RenderedBlock } from '../lib/markdown.jsx'
 
 // ============================================================
-// TREE — albero unico delle viste, stile XMind "tree chart":
-// radice in alto a sinistra, figli impilati sotto e indentati.
-// Tocca un nodo per aprire il pannello rapido: vedi e modifichi
-// il contenuto senza aprire l'editor completo. Trascina un nodo
-// su un altro per spostarlo.
+// TREE — albero delle viste, stile XMind "tree chart".
+// Ogni VISIONE è un nodo radice; sotto stanno le sue viste,
+// annidate secondo parent_id. Tocca un nodo per il pannello
+// rapido; trascina una vista su un'altra vista (nidifica) o su
+// un'altra visione (la sposta lì come vista radice).
 // ============================================================
 
 const ROW = 52          // altezza riga
@@ -16,37 +16,49 @@ const PAD = 24
 const NODE_H = 38
 const uid = () => 'b-' + Math.random().toString(36).slice(2, 9)
 
-export default function Tree({ viste, onOpen, onAddChild, onReparent, onQuickSave }) {
+export default function Tree({ viste, visioni = [], onOpen, onAddChild, onAddToVisione, onReparent, onMoveToVisione, onQuickSave }) {
   const [zoom, setZoom] = useState(1)
-  const [drag, setDrag] = useState(null)     // { id, x, y, over }
-  const [ask, setAsk] = useState(null)       // { childId, parentId }
+  const [drag, setDrag] = useState(null)     // { id, x, y, over, overType }
+  const [ask, setAsk] = useState(null)       // { childId, parentId } | { childId, visioneId }
   const [quick, setQuick] = useState(null)   // vista aperta nel pannello rapido
   const dragRef = useRef(null)
   const scrollRef = useRef(null)
 
-  const { rows, byId, childrenOf, maxDepth } = useMemo(() => {
+  const { rows, byVista, byVisione, maxDepth } = useMemo(() => {
     const all = viste.filter(v => !v.is_template)
     const ids = new Set(all.map(v => v.id))
-    const childrenOf = {}
-    const roots = []
+    const childrenOf = {}                 // parent vista -> viste figlie
+    const topByVisione = {}               // visione -> viste "radice" (senza genitore valido)
     all.forEach(v => {
       if (v.parent_id && ids.has(v.parent_id)) (childrenOf[v.parent_id] ||= []).push(v)
-      else roots.push(v)
+      else (topByVisione[v.visione_id] ||= []).push(v)
     })
     const sortF = (a, b) => (a.ordine || 0) - (b.ordine || 0)
-    roots.sort(sortF)
     Object.values(childrenOf).forEach(arr => arr.sort(sortF))
+    Object.values(topByVisione).forEach(arr => arr.sort(sortF))
+
     const rows = []
     let maxDepth = 0
     const walk = (v, depth) => {
       maxDepth = Math.max(maxDepth, depth)
-      rows.push({ v, depth, idx: rows.length })
+      rows.push({ type: 'vista', v, depth, idx: rows.length })
       ;(childrenOf[v.id] || []).forEach(c => walk(c, depth + 1))
     }
-    roots.forEach(r => walk(r, 0))
-    const byId = Object.fromEntries(rows.map(r => [r.v.id, r]))
-    return { rows, byId, childrenOf, maxDepth }
-  }, [viste])
+    const visSorted = [...visioni].sort(sortF)
+    visSorted.forEach(vis => {
+      rows.push({ type: 'visione', vis, depth: 0, idx: rows.length })
+      ;(topByVisione[vis.id] || []).forEach(v => walk(v, 1))
+    })
+    // sicurezza: viste la cui visione non esiste più -> mostrale come radici
+    const knownVis = new Set(visioni.map(v => v.id))
+    Object.entries(topByVisione).forEach(([visId, arr]) => {
+      if (!knownVis.has(visId)) arr.forEach(v => walk(v, 0))
+    })
+
+    const byVista = Object.fromEntries(rows.filter(r => r.type === 'vista').map(r => [r.v.id, r]))
+    const byVisione = Object.fromEntries(rows.filter(r => r.type === 'visione').map(r => [r.vis.id, r]))
+    return { rows, byVista, byVisione, maxDepth }
+  }, [viste, visioni])
 
   // tieni il pannello rapido sincronizzato con i dati aggiornati
   useEffect(() => {
@@ -61,7 +73,7 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent, onQuickSav
     return `color-mix(in srgb, var(--green-deep) ${pct}%, var(--panel))`
   }
 
-  // ---- drag per spostare un nodo su un altro ramo ----
+  // ---- drag per spostare una vista su un altro ramo / un'altra visione ----
   const onNodeDown = (e, id) => {
     e.currentTarget.setPointerCapture?.(e.pointerId)
     dragRef.current = { id, sx: e.clientX, sy: e.clientY, moved: false }
@@ -71,20 +83,26 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent, onQuickSav
     if (!d) return
     if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 10) return
     d.moved = true
-    const el = document.elementFromPoint(e.clientX, e.clientY)
-    const overId = el?.closest?.('.tnode')?.getAttribute('data-id')
-    setDrag({ id: d.id, x: e.clientX, y: e.clientY, over: (overId && overId !== d.id) ? overId : null })
+    const node = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.tnode')
+    const overId = node?.getAttribute('data-id')
+    const overType = node?.getAttribute('data-type')
+    setDrag({ id: d.id, x: e.clientX, y: e.clientY, over: (overId && overId !== d.id) ? overId : null, overType })
   }
   const onNodeUp = () => {
     const d = dragRef.current; dragRef.current = null
     const info = drag; setDrag(null)
     if (!d) return
-    if (!d.moved) { const r = byId[d.id]; if (r) setQuick(r.v); return }
-    if (info?.over && onReparent) {
-      let p = byId[info.over]
+    if (!d.moved) { const r = byVista[d.id]; if (r) setQuick(r.v); return }   // click = apri pannello
+    if (!info?.over) return
+    if (info.overType === 'visione') {                 // sposta la vista sotto un'altra visione
+      if (onMoveToVisione) setAsk({ childId: d.id, visioneId: info.over })
+      return
+    }
+    if (onReparent) {                                  // sposta la vista sotto un'altra vista
+      let p = byVista[info.over]
       while (p) {
         if (p.v.id === d.id) { alert('Non puoi spostare un ramo dentro sé stesso.'); return }
-        p = p.v.parent_id ? byId[p.v.parent_id] : null
+        p = p.v.parent_id ? byVista[p.v.parent_id] : null
       }
       setAsk({ childId: d.id, parentId: info.over })
     }
@@ -108,7 +126,7 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent, onQuickSav
             {rows.map(r => {
               if (r.type !== 'vista') return null
               // genitore = vista madre se esiste, altrimenti la visione contenitore
-              let p = (r.v.parent_id && byVista[r.v.parent_id]) ? byVista[r.v.parent_id] : byVisione[r.v.visione_id]
+              const p = (r.v.parent_id && byVista[r.v.parent_id]) ? byVista[r.v.parent_id] : byVisione[r.v.visione_id]
               if (!p) return null
               const x0 = xOf(p) + 14
               const y0 = yOf(p) + NODE_H
@@ -157,7 +175,7 @@ export default function Tree({ viste, onOpen, onAddChild, onReparent, onQuickSav
         </div>
       </div>
 
-      <div className="tree-hint">Tocca per vedere e modificare · ＋ aggiunge un ramo · trascina un nodo su un altro per spostarlo</div>
+      <div className="tree-hint">Tocca per vedere e modificare · ＋ aggiunge un ramo · trascina una vista su un'altra vista (nidifica) o su una visione (la sposta lì)</div>
 
       {drag && drag.x != null && (
         <div className="drag-ghost" style={{ left: drag.x + 14, top: drag.y + 10 }}>
