@@ -55,11 +55,14 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
       </div>
 
       {sezioni.map(({ vis, list, total }) => (
-        <section key={vis.id}
+        <div key={vis.id} className="vision-drop-wrap">
+        {reorderOver?.id === vis.id && reorderOver.edge === 'before' && dragVisId && dragVisId !== vis.id && (
+          <div className="pipe-dropline" />
+        )}
+        <section
           className={'vision-block'
             + (dragVisId === vis.id ? ' dragging' : '')
-            + (overVisId === vis.id && dragVistaId && vis.id !== viste.find(v => v.id === dragVistaId)?.visione_id ? ' drop-target' : '')
-            + (reorderOver?.id === vis.id && dragVisId && dragVisId !== vis.id ? ' drop-line-' + reorderOver.edge : '')}
+            + (overVisId === vis.id && dragVistaId && vis.id !== viste.find(v => v.id === dragVistaId)?.visione_id ? ' drop-target' : '')}
           style={{ '--vcol': vis.colore || 'var(--green)' }}
           onDragOver={e => {
             if (q) return
@@ -125,6 +128,10 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
             {!list.length && <div className="vista-empty">{q ? 'Nessuna vista corrisponde qui.' : 'Nessuna vista: aggiungine una.'}</div>}
           </div>
         </section>
+        {reorderOver?.id === vis.id && reorderOver.edge === 'after' && dragVisId && dragVisId !== vis.id && (
+          <div className="pipe-dropline" />
+        )}
+        </div>
       ))}
 
       {q && nResults === 0 && !sezioni.length && (

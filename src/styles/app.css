@@ -127,14 +127,14 @@ a { color: var(--accent); text-decoration: none; }
 }
 .vision-block.dragging { opacity: .4; }
 .vision-block.drop-target { box-shadow: 0 0 0 2px var(--vcol) inset; }
-/* riordino visioni: una riga separatrice tra due sezioni invece di evidenziare l'intero contenitore */
-.vision-block.drop-line-before, .vision-block.drop-line-after { position: relative; }
-.vision-block.drop-line-before::before, .vision-block.drop-line-after::after {
-  content: ''; position: absolute; left: 4px; right: 4px; height: 3px; border-radius: 3px;
+/* riordino visioni: una riga separatrice REALE tra due sezioni (non un pseudo-elemento:
+   .vision-block ha overflow:hidden, quindi un ::before/::after con offset negativo
+   veniva tagliato via e la riga non si vedeva mai) */
+.vision-drop-wrap { position: relative; }
+.pipe-dropline {
+  height: 3px; margin: 6px 18px; border-radius: 3px;
   background: var(--green-bright); box-shadow: 0 0 8px var(--green-bright);
 }
-.vision-block.drop-line-before::before { top: -9px; }
-.vision-block.drop-line-after::after { bottom: -9px; }
 .drag-handle { cursor: grab; font-size: 16px; color: var(--text-dim); flex: 0 0 auto; touch-action: none; user-select: none; }
 .drag-handle:active { cursor: grabbing; }
 .vision-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
