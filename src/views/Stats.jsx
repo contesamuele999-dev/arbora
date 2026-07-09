@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getActivity } from '../lib/activity.js'
 
 // ============================================================
@@ -97,10 +97,18 @@ function Chart({ title, color, buckets, field, best }) {
   const W = Math.max(320, buckets.length * 26)
   const H = 140, PADB = 22
   const bw = (W / buckets.length) * 0.62
+  const scrollRef = useRef(null)
+
+  // di default lo scroll mostra i dati più recenti (a destra), non l'inizio della serie
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollLeft = el.scrollWidth
+  }, [W, buckets.length])
+
   return (
     <div className="chart">
       <div className="chart-title">{title}</div>
-      <div className="chart-scroll" data-noswipe="scroll">
+      <div className="chart-scroll" data-noswipe="scroll" ref={scrollRef}>
         <svg width={W} height={H} className="chart-svg">
           {buckets.map((b, i) => {
             const x = (i + 0.5) * (W / buckets.length)
