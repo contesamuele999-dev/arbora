@@ -6,8 +6,11 @@ import { stageOf } from '../lib/stages.js'
 // e viste (card neutre con indicatore colore della fase).
 // Ricerca: priorità ai titoli delle viste, poi al contenuto.
 // ============================================================
-export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisione, onAddVista, onRenameVisione, onRecolorVisione, onDeleteVista, onDeleteVisione }) {
+export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisione, onAddVista, onRenameVisione, onRecolorVisione, onDeleteVista, onDeleteVisione, onReorderVisioni, onMoveVistaToVisione }) {
   const [query, setQuery] = useState('')
+  const [dragVisId, setDragVisId] = useState(null)
+  const [overVisId, setOverVisId] = useState(null)
+  const [dragVistaId, setDragVistaId] = useState(null)   // vista trascinata verso un'altra visione
   const preview = (v) => (v.blocchi || []).map(b => b.text).join(' ').replace(/[#*`>]/g, '').slice(0, 140)
 
   const q = query.trim().toLowerCase()
@@ -51,8 +54,27 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
       </div>
 
       {sezioni.map(({ vis, list, total }) => (
-        <section key={vis.id} className="vision-block" style={{ '--vcol': vis.colore || 'var(--green)' }}>
+        <section key={vis.id}
+          className={'vision-block' + (dragVisId === vis.id ? ' dragging' : '') + (overVisId === vis.id && ((dragVisId && dragVisId !== vis.id) || (dragVistaId && vis.id !== viste.find(v => v.id === dragVistaId)?.visione_id)) ? ' drop-target' : '')}
+          style={{ '--vcol': vis.colore || 'var(--green)' }}
+          onDragOver={e => { if (!q && (dragVisId || dragVistaId)) { e.preventDefault(); setOverVisId(vis.id) } }}
+          onDragLeave={() => setOverVisId(id => id === vis.id ? null : id)}
+          onDrop={e => {
+            e.preventDefault()
+            if (!q && dragVisId && dragVisId !== vis.id) onReorderVisioni(dragVisId, vis.id)
+            else if (!q && dragVistaId) {
+              const v = viste.find(x => x.id === dragVistaId)
+              if (v && v.visione_id !== vis.id) onMoveVistaToVisione?.(dragVistaId, vis.id)
+            }
+            setDragVisId(null); setDragVistaId(null); setOverVisId(null)
+          }}>
           <header className="vision-head">
+            {!q && (
+              <span className="drag-handle" title="Trascina per riordinare"
+                draggable
+                onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragVisId(vis.id) }}
+                onDragEnd={() => { setDragVisId(null); setOverVisId(null) }}>⠿</span>
+            )}
             <label className="vision-swatch" title="Colore della visione">
               <input type="color" value={vis.colore || '#2e9e63'}
                 onChange={e => onRecolorVisione(vis, e.target.value)} />
@@ -69,7 +91,10 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
             {list.map(({ v }) => {
               const st = stageOf(v)
               return (
-                <article key={v.id} className="vista-card" style={{ '--stage': st.color }}
+                <article key={v.id} className={'vista-card' + (dragVistaId === v.id ? ' dragging' : '')} style={{ '--stage': st.color }}
+                  draggable title="Trascina su un'altra visione per spostarla"
+                  onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragVistaId(v.id) }}
+                  onDragEnd={() => { setDragVistaId(null); setOverVisId(null) }}
                   onClick={() => onOpen(v)}>
                   <div className="vista-top">
                     <span className="stage-dot" title={st.label} />

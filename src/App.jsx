@@ -12,6 +12,7 @@ import Guide from './views/Guide.jsx'
 import { Privacy, Terms } from './pages/Legal.jsx'
 import { THEMES, applyTheme, loadTheme } from './lib/themes.js'
 import { exportBackup, importBackup } from './lib/backup.js'
+import { importGoogleKeep } from './lib/keepImport.js'
 import { RenderedBlock } from './lib/markdown.jsx'
 import { DEFAULT_STAGE } from './lib/stages.js'
 import { cacheVistaLocal, markVistaSynced, mergeVisteWithCache, flushDirtyToCloud, cestinoDisabled, disableCestinoCloud, isMissingCestino } from './lib/localcache.js'
@@ -164,6 +165,23 @@ export default function App() {
     setVisioni(prev => prev.map(v => v.id === visione.id ? { ...v, colore } : v))
   }
 
+  // drag & drop per riordinare le visioni in Pipe
+  const reorderVisioni = async (draggedId, targetId) => {
+    if (draggedId === targetId) return
+    const arr = [...visioni]
+    const from = arr.findIndex(v => v.id === draggedId)
+    const to = arr.findIndex(v => v.id === targetId)
+    if (from === -1 || to === -1) return
+    const [item] = arr.splice(from, 1)
+    arr.splice(to, 0, item)
+    const before = new Map(visioni.map(v => [v.id, v.ordine]))
+    const withOrdine = arr.map((v, i) => ({ ...v, ordine: i }))
+    setVisioni(withOrdine)
+    for (const v of withOrdine) {
+      if (before.get(v.id) !== v.ordine) { try { await store.update('visioni', v.id, { ordine: v.ordine }) } catch {} }
+    }
+  }
+
   // ---- Eliminazione rapida (con conferma) ----
   const deleteVista = (vista) => {
     setConfirm({
@@ -288,6 +306,17 @@ export default function App() {
       alert('Errore import: ' + (e?.message || e))
     } finally { setBusy(''); setMenu(false) }
   }
+  const doImportKeep = async (files) => {
+    if (!files?.length) return
+    setBusy('keep')
+    try {
+      const res = await importGoogleKeep(files)
+      await reload()
+      alert(`Importazione da Google Keep completata: ${res.imported} note importate` + (res.skipped ? `, ${res.skipped} saltate (cestino)` : '') + `.\nTrovi le note nella visione "Google Keep" appena creata.`)
+    } catch (e) {
+      alert('Errore import Google Keep: ' + (e?.message || e))
+    } finally { setBusy(''); setMenu(false) }
+  }
 
   const reparent = async (childId, parentId) => {
     const parent = viste.find(v => v.id === parentId)
@@ -374,7 +403,7 @@ export default function App() {
           <button className="iconbtn" title="Focus" onClick={() => setFocusMode(f => !f)}>{focusMode ? '🔅' : '🎯'}</button>
         </div>
         <div className="content" onTouchStart={onEditorTouchStart} onTouchEnd={onEditorTouchEnd}>
-          <Editor vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} />
+          <Editor vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} onSetStage={setStage} />
         </div>
         {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
         {guide && <GuideModal section={guide} onClose={() => setGuide(null)} />}
@@ -409,7 +438,8 @@ export default function App() {
               onOpen={setVistaAperta} onPreview={setPreview}
               onAddVisione={addVisione} onAddVista={(visioneId) => addVista({ visioneId })}
               onRenameVisione={renameVisione} onRecolorVisione={recolorVisione}
-              onDeleteVista={deleteVista} onDeleteVisione={deleteVisione} />
+              onDeleteVista={deleteVista} onDeleteVisione={deleteVisione}
+              onReorderVisioni={reorderVisioni} onMoveVistaToVisione={moveVistaToVisione} />
           )}
           {tab === 'tree' && (
             (visioni.length || viste.length)
@@ -499,6 +529,11 @@ export default function App() {
                 ⬆ Importa backup (JSON)
                 <input type="file" accept="application/json" style={{display:'none'}}
                   onChange={e => e.target.files[0] && doImport(e.target.files[0])} />
+              </label>
+              <label className="menu-import" title="Seleziona la cartella 'Takeout/Keep' scaricata da Google Takeout">
+                📥 Importa da Google Keep {busy==='keep' ? '…' : ''}
+                <input type="file" accept="application/json" multiple webkitdirectory="" directory="" style={{display:'none'}}
+                  onChange={e => { const files = Array.from(e.target.files); e.target.value = ''; doImportKeep(files) }} />
               </label>
               <button onClick={() => { setPage('privacy'); setMenu(false) }}>Privacy</button>
               <button onClick={() => { setPage('terms'); setMenu(false) }}>Termini e condizioni</button>
@@ -598,3 +633,4 @@ function BrandLogo() {
     </svg>
   )
 }
+

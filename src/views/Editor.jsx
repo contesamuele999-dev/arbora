@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { RenderedBlock } from '../lib/markdown.jsx'
 import { logChars } from '../lib/activity.js'
 import { cacheVistaLocal } from '../lib/localcache.js'
+import { STAGES, stageOf } from '../lib/stages.js'
 
 const uid = () => 'b-' + Math.random().toString(36).slice(2, 9)
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -48,7 +49,8 @@ function parseIndented(text, base = 0) {
 // Editor della singola VISTA: blocchi markdown, drag&drop (riordino + nidificazione),
 // click=modifica · doppio click=copia · icona cestino=elimina (con recupero 7 giorni),
 // selezione multipla + copia/taglia/incolla di sezioni intere, undo/redo.
-export default function Editor({ vista, onChange, onWikilink, focusMode, allViste = [] }) {
+export default function Editor({ vista, onChange, onWikilink, focusMode, allViste = [], onSetStage }) {
+  const [stagePick, setStagePick] = useState(false)
   const [blocks, setBlocks] = useState(vista.blocchi?.length ? vista.blocchi : [{ id: uid(), text: '' }])
   const [title, setTitle] = useState(vista.titolo || '')
   const [trash, setTrash] = useState(purgeTrash(vista.cestino))
@@ -211,6 +213,37 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     setEditing(null)
     setToast(`Incollate ${made.length} righe`); setTimeout(() => setToast(''), 1300)
   }
+
+  // Incolla "libero": quando NON si sta modificando una riga specifica (nessun blocco in edit),
+  // Ctrl+V in qualunque punto della vista crea comunque nuove righe, in fondo alla vista.
+  const pasteAtEnd = (text) => {
+    let parts = parseIndented(text, 0)
+    while (parts.length && parts[parts.length - 1].text.trim() === '') parts.pop()
+    if (!parts.length) return
+    const made = parts.map(p => ({ id: uid(), text: p.text, indent: p.indent }))
+    const last = blocks[blocks.length - 1]
+    const emptyLast = last && (last.text || '').trim() === ''
+    const next = emptyLast ? [...blocks.slice(0, -1), ...made] : [...blocks, ...made]
+    pushUndo(blocks)
+    setBlocks(next); persist(next, title, trash)
+    setToast(`Incollate ${made.length} riga${made.length > 1 ? 'e' : ''}`); setTimeout(() => setToast(''), 1300)
+  }
+
+  // ascolta il paste di sistema quando non si sta scrivendo in un campo specifico
+  // (titolo, ricerca o riga in modifica hanno già il loro onPaste dedicato)
+  useEffect(() => {
+    const handler = (e) => {
+      const tag = document.activeElement?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      const text = e.clipboardData?.getData('text') || ''
+      if (!text.trim()) return
+      e.preventDefault()
+      pasteAtEnd(text)
+    }
+    document.addEventListener('paste', handler)
+    return () => document.removeEventListener('paste', handler)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocks, title, trash])
 
   // ---- elimina riga: va nel CESTINO (recuperabile 7 giorni) ----
   const deleteBlock = (id) => {
@@ -429,13 +462,36 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
       <div className="editor-head">
         <input className="editor-title" value={title} placeholder="Titolo della vista…"
           onChange={e => titleChange(e.target.value)} />
+        {onSetStage && (
+          <div className="stage-pick-wrap">
+            <button type="button" className="stage-pill" style={{ '--stage': stageOf(vista).color }}
+              title="Fase del progresso" onClick={() => setStagePick(s => !s)}>
+              <span className="stage-dot" /> {stageOf(vista).label}
+            </button>
+            {stagePick && (
+              <>
+                <div className="stage-pick-scrim" onClick={() => setStagePick(false)} />
+                <div className="stage-pick-menu">
+                  {STAGES.map(s => (
+                    <button key={s.id} type="button"
+                      className={'stage-opt' + (stageOf(vista).id === s.id ? ' active' : '')}
+                      style={{ '--stage': s.color }}
+                      onClick={() => { onSetStage(vista.id, s.id); setStagePick(false) }}>
+                      <span className="stage-dot" /> {s.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
         <span className={'save-state ' + saveState} title={
           saveState === 'saved' ? 'Salvato nel cloud' :
           saveState === 'local' ? 'Salvato su questo dispositivo (cloud non raggiungibile)' :
           saveState === 'saving' ? 'Salvataggio…' : ''}>
           {saveState === 'saving' && '⏳ Salvataggio…'}
-          {saveState === 'saved' && '✓ Salvato'}
-          {saveState === 'local' && '✓ Salvato (dispositivo)'}
+          {saveState === 'saved' && '☁ Salvato nel cloud'}
+          {saveState === 'local' && '💾 Solo su questo dispositivo'}
         </span>
       </div>
 
