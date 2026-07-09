@@ -12,10 +12,17 @@ const SCROLL_SPEED = 14
 export default function Progress({ viste, onOpen, onSetStage }) {
   const [pick, setPick] = useState(null)      // vista di cui cambiare fase (menu)
   const [drag, setDrag] = useState(null)      // { id, x, y, over }
+  const [query, setQuery] = useState('')
   const dragRef = useRef(null)
   const kanbanRef = useRef(null)
   const autoScroll = useRef(0)                 // -1 sx, 1 dx, 0 fermo
-  const items = viste.filter(v => !v.is_template)
+  const q = query.trim().toLowerCase()
+  const matches = (v) => {
+    if (!q) return true
+    if ((v.titolo || '').toLowerCase().includes(q)) return true
+    return (v.blocchi || []).map(b => b.text).join(' ').toLowerCase().includes(q)
+  }
+  const items = viste.filter(v => !v.is_template && matches(v))
 
   // Auto-scroll orizzontale continuo mentre si trascina vicino ai bordi.
   useEffect(() => {
@@ -67,6 +74,13 @@ export default function Progress({ viste, onOpen, onSetStage }) {
       <div className="section-head">
         <h2>Progress</h2>
         <span className="crumb">{items.length} viste nel flusso</span>
+      </div>
+
+      <div className="pipe-search">
+        <span className="pipe-search-ico">🔍</span>
+        <input className="pipe-search-input" value={query} onChange={e => setQuery(e.target.value)}
+          placeholder="Cerca viste (titolo, poi contenuto)…" />
+        {query && <button className="pipe-search-clear" title="Pulisci" onClick={() => setQuery('')}>✕</button>}
       </div>
 
       <div className="kanban" data-noswipe="scroll" ref={kanbanRef}>
