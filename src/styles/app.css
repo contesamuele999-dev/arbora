@@ -449,12 +449,12 @@ a { color: var(--accent); text-decoration: none; }
   color: var(--text-dim);
 }
 .indent-guide:not(.indent-elbow)::before {
-  content: ''; position: absolute; left: 9px; top: -2px; bottom: -2px; width: 1.5px;
-  background: currentColor; opacity: .35;
+  content: ''; position: absolute; left: 9px; top: -2px; bottom: -2px; width: 0;
+  border-left: 2px solid currentColor; opacity: .35;
 }
 .indent-elbow::before {
   content: ''; position: absolute; left: 9px; top: -2px; width: 11px; height: 16px;
-  border-left: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  border-left: 2px solid currentColor; border-bottom: 2px solid currentColor;
   border-bottom-left-radius: 8px; opacity: .55;
 }
 .level-badge {
