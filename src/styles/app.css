@@ -127,6 +127,14 @@ a { color: var(--accent); text-decoration: none; }
 }
 .vision-block.dragging { opacity: .4; }
 .vision-block.drop-target { box-shadow: 0 0 0 2px var(--vcol) inset; }
+/* riordino visioni: una riga separatrice tra due sezioni invece di evidenziare l'intero contenitore */
+.vision-block.drop-line-before, .vision-block.drop-line-after { position: relative; }
+.vision-block.drop-line-before::before, .vision-block.drop-line-after::after {
+  content: ''; position: absolute; left: 4px; right: 4px; height: 3px; border-radius: 3px;
+  background: var(--green-bright); box-shadow: 0 0 8px var(--green-bright);
+}
+.vision-block.drop-line-before::before { top: -9px; }
+.vision-block.drop-line-after::after { bottom: -9px; }
 .drag-handle { cursor: grab; font-size: 16px; color: var(--text-dim); flex: 0 0 auto; touch-action: none; user-select: none; }
 .drag-handle:active { cursor: grabbing; }
 .vision-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
@@ -427,13 +435,26 @@ a { color: var(--accent); text-decoration: none; }
 @keyframes slideFromLeft { from { transform: translateX(-28px); opacity: .3; } to { transform: translateX(0); opacity: 1; } }
 
 /* ---------- Editor: blocchi nidificati ---------- */
-.nest-bullet { color: var(--green-bright); font-size: 18px; line-height: 1.4; padding: 2px 2px 0 2px; flex: 0 0 auto; user-select: none; }
-
-/* guide di tabulazione: una barra verticale colorata per livello */
+/* guide di tabulazione: per i livelli "di passaggio" resta una linea verticale sottile
+   (il ramo continua sopra/sotto); l'ULTIMO livello diventa una freccetta ad angolo
+   (stile schema ad albero: └─›) che punta al contenuto della riga. */
 .indent-guide {
-  flex: 0 0 auto; width: 22px; align-self: stretch; margin: 2px 0;
-  border-left: 2px solid var(--green-deep); border-radius: 2px;
+  flex: 0 0 auto; width: 22px; align-self: stretch; margin: 2px 0; position: relative;
 }
+.indent-guide:not(.indent-elbow)::before {
+  content: ''; position: absolute; left: 0; top: -2px; bottom: -2px; width: 2px;
+  background: currentColor; opacity: .55; border-radius: 2px;
+}
+.indent-elbow { display: flex; align-items: center; }
+.indent-elbow::before {
+  content: ''; position: absolute; left: 0; top: -2px; bottom: 50%; width: 2px;
+  background: currentColor; opacity: .55; border-radius: 2px;
+}
+.indent-elbow::after {
+  content: ''; position: absolute; left: 0; top: 50%; width: 12px; height: 2px;
+  background: currentColor; opacity: .8; transform: translateY(-1px);
+}
+.indent-elbow .elbow-arrow { position: relative; left: 10px; font-size: 12px; line-height: 1; color: currentColor; opacity: .9; user-select: none; }
 .level-badge {
   flex: 0 0 auto; min-width: 16px; height: 16px; padding: 0 4px; margin-top: 3px;
   display: grid; place-items: center; font-size: 10px; font-weight: 800; line-height: 1;
@@ -450,6 +471,11 @@ a { color: var(--accent); text-decoration: none; }
 }
 .block:hover .row-del, .block.selected .row-del { opacity: 1; }
 .block .row-del:hover { opacity: 1; border-color: var(--danger); background: color-mix(in srgb, var(--danger) 20%, var(--panel)); }
+
+/* icona svuota riga: mantiene la riga ma ne cancella il testo */
+.block .row-clear { width: 28px; height: 28px; font-size: 14px; flex: 0 0 auto; opacity: .55; transition: opacity .12s, border-color .12s; }
+.block:hover .row-clear { opacity: 1; }
+.block .row-clear:hover { opacity: 1; border-color: var(--accent); }
 
 /* selezione multipla */
 .block.selected { background: color-mix(in srgb, var(--green-bright) 12%, var(--bg-2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green-bright) 45%, transparent); }

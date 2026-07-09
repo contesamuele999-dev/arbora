@@ -117,6 +117,16 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     }, 400)
   }
 
+  // Il conteggio caratteri normale si basa sul delta di lunghezza totale del documento
+  // (persist -> logChars). Con un incolla che SOSTITUISCE testo esistente il delta netto
+  // può essere quasi nullo o negativo anche se hai incollato molto testo: va registrato
+  // esplicitamente qui, e il "prevChars" va avanzato per non farlo poi ricontare due volte.
+  const logPasteChars = (len) => {
+    if (!(len > 0)) return
+    logChars(len)
+    prevChars.current += len
+  }
+
   const flush = useCallback(() => {
     if (!pending.current) return
     clearTimeout(saveTimer.current)
@@ -172,11 +182,17 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     setBlocks(next); persist(next, title, trash)
   }
 
-  // keyboard shortcuts undo/redo
+  // keyboard shortcuts undo/redo + copia righe selezionate
   useEffect(() => {
     const h = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo() }
+      else if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && selectMode && selected.size) {
+        const tag = document.activeElement?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return   // lascia fare la copia nativa dentro un campo
+        e.preventDefault()
+        copySection()
+      }
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
@@ -216,6 +232,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     const next = empty
       ? [...blocks.slice(0, idx), ...made, ...blocks.slice(idx + 1)]      // rimpiazza il blocco vuoto
       : [...blocks.slice(0, idx + 1), ...made, ...blocks.slice(idx + 1)]  // inserisci dopo
+    logPasteChars(made.reduce((s, p) => s + p.text.length, 0))
     pushUndo(blocks)
     setBlocks(next); persist(next, title, trash)
     setEditing(null)
@@ -232,6 +249,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     const last = blocks[blocks.length - 1]
     const emptyLast = last && (last.text || '').trim() === ''
     const next = emptyLast ? [...blocks.slice(0, -1), ...made] : [...blocks, ...made]
+    logPasteChars(made.reduce((s, p) => s + p.text.length, 0))
     pushUndo(blocks)
     setBlocks(next); persist(next, title, trash)
     setToast(`Incollate ${made.length} riga${made.length > 1 ? 'e' : ''}`); setTimeout(() => setToast(''), 1300)
@@ -252,6 +270,12 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     return () => document.removeEventListener('paste', handler)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blocks, title, trash])
+
+  // ---- svuota il contenuto di una riga, mantenendo la riga (niente cestino) ----
+  const clearBlock = (id) => {
+    const next = blocks.map(b => b.id === id ? { ...b, text: '' } : b)
+    commit(next)
+  }
 
   // ---- elimina riga: va nel CESTINO (recuperabile 7 giorni) ----
   const deleteBlock = (id) => {
@@ -312,6 +336,39 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n
   })
   const selectAll = () => setSelected(new Set(blocks.map(b => b.id)))
+
+  // trascina sopra più caselle ☑ per selezionarle/deselezionarle in blocco
+  const selDrag = useRef(null)   // { adding: bool, touched: Set }
+  const selDragOn = (id) => {
+    setSelected(s => {
+      const willAdd = !s.has(id)
+      selDrag.current = { adding: willAdd, touched: new Set([id]) }
+      const n = new Set(s); willAdd ? n.add(id) : n.delete(id); return n
+    })
+  }
+  const selDragEnter = (id) => {
+    const d = selDrag.current
+    if (!d || d.touched.has(id)) return
+    d.touched.add(id)
+    setSelected(s => {
+      const n = new Set(s); d.adding ? n.add(id) : n.delete(id); return n
+    })
+  }
+  useEffect(() => {
+    const end = () => { selDrag.current = null }
+    // pointerenter funziona solo col mouse: per il touch (il dito "trascina" mantenendo
+    // il pointer capture sul primo elemento) serviamo elementFromPoint sotto il dito.
+    const move = (e) => {
+      if (!selDrag.current || e.pointerType !== 'touch') return
+      const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.sel-box')
+      const id = el?.getAttribute('data-block-id')
+      if (id) selDragEnter(id)
+    }
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointermove', move)
+    return () => { window.removeEventListener('pointerup', end); window.removeEventListener('pointermove', move) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const indentSelected = (dir) => {
     if (!selected.size) return
     pushUndo(blocks)
@@ -593,23 +650,30 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           onDrop={e => onDrop(e, b.id)}
           onDragEnd={endDrag}
         >
-          {/* guide di tabulazione: una barra colorata per livello */}
+          {/* guide di tabulazione: linee verticali per i livelli superiori, una "freccetta" ad angolo per l'ultimo (stile schema ad albero) */}
           {Array.from({ length: indent }).map((_, i) => (
-            <span key={i} className="indent-guide" style={{ borderColor: GUIDE_COLORS[i % GUIDE_COLORS.length] }} />
+            <span key={i}
+              className={'indent-guide' + (i === indent - 1 ? ' indent-elbow' : '')}
+              style={{ color: GUIDE_COLORS[i % GUIDE_COLORS.length] }}>
+              {i === indent - 1 && <span className="elbow-arrow">›</span>}
+            </span>
           ))}
           {selectMode && (
-            <span className={'sel-box' + (isSel ? ' on' : '')} onClick={() => toggleSelect(b.id)}>{isSel ? '✓' : ''}</span>
+            <span className={'sel-box' + (isSel ? ' on' : '')} data-block-id={b.id}
+              onPointerDown={e => { e.preventDefault(); selDragOn(b.id) }}
+              onPointerEnter={() => { if (selDrag.current) selDragEnter(b.id) }}>{isSel ? '✓' : ''}</span>
           )}
           <span className="handle" title="Trascina · dx/sx per nidificare">⠿</span>
           {indent > 0 && <span className="level-badge" title={'Livello ' + indent}>{indent}</span>}
-          {indent > 0 && isPlain(b.text) && editing !== b.id && <span className="nest-bullet">•</span>}
           {editing === b.id ? (
             <textarea autoFocus value={b.text} rows={Math.max(1, b.text.split('\n').length)}
               onChange={e => setText(b.id, e.target.value)}
               onBlur={() => setEditing(null)}
               onPaste={e => {
                 const text = e.clipboardData?.getData('text') || ''
+                if (!text) return
                 if (text.includes('\n')) { e.preventDefault(); pasteMultiline(b, text) }
+                else logPasteChars(text.length)   // incolla su una riga sola: lascia fare il browser, registra solo i caratteri
               }}
               onKeyDown={e => {
                 const el = e.target
@@ -626,6 +690,10 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
             </div>
           )}
           <span className={'copytap' + (flash === b.id ? ' copied-flash' : '')}>{flash === b.id ? 'copiato!' : ''}</span>
+          {!selectMode && b.text && (
+            <button className="iconbtn row-clear" title="Svuota il contenuto della riga"
+              onClick={() => clearBlock(b.id)}>⌫</button>
+          )}
           {!selectMode && (
             <button className="iconbtn row-del" title="Elimina riga (recuperabile 7 giorni)"
               onClick={() => deleteBlock(b.id)}>🗑</button>

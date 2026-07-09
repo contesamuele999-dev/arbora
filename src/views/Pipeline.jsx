@@ -9,7 +9,8 @@ import { stageOf } from '../lib/stages.js'
 export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisione, onAddVista, onRenameVisione, onRecolorVisione, onDeleteVista, onDeleteVisione, onReorderVisioni, onMoveVistaToVisione }) {
   const [query, setQuery] = useState('')
   const [dragVisId, setDragVisId] = useState(null)
-  const [overVisId, setOverVisId] = useState(null)
+  const [overVisId, setOverVisId] = useState(null)          // visione target per lo spostamento di una VISTA (evidenzia il contenitore)
+  const [reorderOver, setReorderOver] = useState(null)       // { id, edge } per il riordino VISIONI (mostra una riga separatrice)
   const [dragVistaId, setDragVistaId] = useState(null)   // vista trascinata verso un'altra visione
   const preview = (v) => (v.blocchi || []).map(b => b.text).join(' ').replace(/[#*`>]/g, '').slice(0, 140)
 
@@ -55,25 +56,38 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
 
       {sezioni.map(({ vis, list, total }) => (
         <section key={vis.id}
-          className={'vision-block' + (dragVisId === vis.id ? ' dragging' : '') + (overVisId === vis.id && ((dragVisId && dragVisId !== vis.id) || (dragVistaId && vis.id !== viste.find(v => v.id === dragVistaId)?.visione_id)) ? ' drop-target' : '')}
+          className={'vision-block'
+            + (dragVisId === vis.id ? ' dragging' : '')
+            + (overVisId === vis.id && dragVistaId && vis.id !== viste.find(v => v.id === dragVistaId)?.visione_id ? ' drop-target' : '')
+            + (reorderOver?.id === vis.id && dragVisId && dragVisId !== vis.id ? ' drop-line-' + reorderOver.edge : '')}
           style={{ '--vcol': vis.colore || 'var(--green)' }}
-          onDragOver={e => { if (!q && (dragVisId || dragVistaId)) { e.preventDefault(); setOverVisId(vis.id) } }}
-          onDragLeave={() => setOverVisId(id => id === vis.id ? null : id)}
+          onDragOver={e => {
+            if (q) return
+            if (dragVisId) {
+              e.preventDefault()
+              const r = e.currentTarget.getBoundingClientRect()
+              const edge = (e.clientY - r.top) < r.height / 2 ? 'before' : 'after'
+              setReorderOver({ id: vis.id, edge })
+            } else if (dragVistaId) {
+              e.preventDefault(); setOverVisId(vis.id)
+            }
+          }}
+          onDragLeave={() => { setOverVisId(id => id === vis.id ? null : id); setReorderOver(o => o?.id === vis.id ? null : o) }}
           onDrop={e => {
             e.preventDefault()
-            if (!q && dragVisId && dragVisId !== vis.id) onReorderVisioni(dragVisId, vis.id)
+            if (!q && dragVisId && dragVisId !== vis.id) onReorderVisioni(dragVisId, vis.id, reorderOver?.edge || 'before')
             else if (!q && dragVistaId) {
               const v = viste.find(x => x.id === dragVistaId)
               if (v && v.visione_id !== vis.id) onMoveVistaToVisione?.(dragVistaId, vis.id)
             }
-            setDragVisId(null); setDragVistaId(null); setOverVisId(null)
+            setDragVisId(null); setDragVistaId(null); setOverVisId(null); setReorderOver(null)
           }}>
           <header className="vision-head">
             {!q && (
               <span className="drag-handle" title="Trascina per riordinare"
                 draggable
                 onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragVisId(vis.id) }}
-                onDragEnd={() => { setDragVisId(null); setOverVisId(null) }}>⠿</span>
+                onDragEnd={() => { setDragVisId(null); setReorderOver(null) }}>⠿</span>
             )}
             <label className="vision-swatch" title="Colore della visione">
               <input type="color" value={vis.colore || '#2e9e63'}

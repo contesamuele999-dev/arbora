@@ -74,14 +74,18 @@ export default function Tree({ viste, visioni = [], onOpen, onAddChild, onAddToV
   }
 
   // ---- drag per spostare una vista su un altro ramo / un'altra visione ----
+  // soglia più alta per touch/pen: il dito ha più "jitter" del mouse e altrimenti
+  // un semplice tocco veniva scambiato per un mini-drag, saltando l'apertura del pannello
+  const MOVE_THRESHOLD = { mouse: 10, touch: 18, pen: 14 }
   const onNodeDown = (e, id) => {
     e.currentTarget.setPointerCapture?.(e.pointerId)
-    dragRef.current = { id, sx: e.clientX, sy: e.clientY, moved: false }
+    dragRef.current = { id, sx: e.clientX, sy: e.clientY, moved: false, pointerType: e.pointerType || 'mouse' }
   }
   const onNodeMove = (e) => {
     const d = dragRef.current
     if (!d) return
-    if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 10) return
+    const th = MOVE_THRESHOLD[d.pointerType] ?? 10
+    if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < th) return
     d.moved = true
     const node = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.tnode')
     const overId = node?.getAttribute('data-id')
@@ -92,8 +96,8 @@ export default function Tree({ viste, visioni = [], onOpen, onAddChild, onAddToV
     const d = dragRef.current; dragRef.current = null
     const info = drag; setDrag(null)
     if (!d) return
-    if (!d.moved) { const r = byVista[d.id]; if (r) setQuick(r.v); return }   // click = apri pannello
-    if (!info?.over) return
+    // tap (o mini-drag senza un bersaglio valido, es. jitter del dito su tablet) = apri pannello
+    if (!d.moved || !info?.over) { const r = byVista[d.id]; if (r) setQuick(r.v); return }
     if (info.overType === 'visione') {                 // sposta la vista sotto un'altra visione
       if (onMoveToVisione) setAsk({ childId: d.id, visioneId: info.over })
       return

@@ -165,15 +165,16 @@ export default function App() {
     setVisioni(prev => prev.map(v => v.id === visione.id ? { ...v, colore } : v))
   }
 
-  // drag & drop per riordinare le visioni in Pipe
-  const reorderVisioni = async (draggedId, targetId) => {
+  // drag & drop per riordinare le visioni in Pipe (edge: 'before' | 'after' rispetto al bersaglio)
+  const reorderVisioni = async (draggedId, targetId, edge = 'before') => {
     if (draggedId === targetId) return
     const arr = [...visioni]
     const from = arr.findIndex(v => v.id === draggedId)
-    const to = arr.findIndex(v => v.id === targetId)
-    if (from === -1 || to === -1) return
+    if (from === -1) return
     const [item] = arr.splice(from, 1)
-    arr.splice(to, 0, item)
+    const to = arr.findIndex(v => v.id === targetId)
+    if (to === -1) return
+    arr.splice(edge === 'after' ? to + 1 : to, 0, item)
     const before = new Map(visioni.map(v => [v.id, v.ordine]))
     const withOrdine = arr.map((v, i) => ({ ...v, ordine: i }))
     setVisioni(withOrdine)

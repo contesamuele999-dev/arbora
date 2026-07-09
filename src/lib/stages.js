@@ -4,7 +4,7 @@
 // senza entrare in conflitto con la sfumatura per profondità.
 // ============================================================
 export const STAGES = [
-  { id: 'note',          label: 'Note',          color: '#5c6773' },
+  { id: 'note',          label: 'Note',          color: '#000000' },
   { id: 'idee',          label: 'Idee',          color: '#8fa3b8' },
   { id: 'progettazione', label: 'Progettazione', color: '#b18cf2' },
   { id: 'incorso',       label: 'In corso',      color: '#f2b344' },
