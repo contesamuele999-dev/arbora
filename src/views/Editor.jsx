@@ -73,8 +73,16 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const clickTimer = useRef(null)        // discrimina click (modifica) da doppio-click (copia)
   const prevChars = useRef(totalChars(vista.blocchi))
   const pending = useRef(null)           // { blocks, title, trash } da salvare al volo se si esce
+  const rootRef = useRef(null)           // contenitore della vista: riceve il focus all'apertura
 
   useEffect(() => { if (editing) lastEdit.current = editing }, [editing])
+
+  // Fallback per Safari e browser che non generano l'evento "paste" senza
+  // un'interazione precedente: porta il focus sul contenitore appena si apre
+  // la vista, così Ctrl+V funziona subito anche senza aver cliccato altrove.
+  useEffect(() => {
+    rootRef.current?.focus({ preventScroll: true })
+  }, [vista.id])
 
   // re-sync se cambia la vista aperta (+ pulizia cestino oltre 7 giorni)
   useEffect(() => {
@@ -458,7 +466,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const isPlain = (t) => t && !t.startsWith('#') && t.trim() !== '---'
 
   return (
-    <div className="editor">
+    <div className="editor" ref={rootRef} tabIndex={-1}>
       <div className="editor-head">
         <input className="editor-title" value={title} placeholder="Titolo della vista…"
           onChange={e => titleChange(e.target.value)} />
