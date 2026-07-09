@@ -652,7 +652,9 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
               per l'ultimo livello (stile schema ad albero, disegnata coi bordi: niente glifi di
               testo che finivano nascosti dietro la maniglia ⠿) */}
           {Array.from({ length: indent }).map((_, i) => (
-            <span key={i} className={'indent-guide' + (i === indent - 1 ? ' indent-elbow' : '')} />
+            <span key={i} className={'indent-guide' + (i === indent - 1 ? ' indent-elbow' : '')}>
+              {i === indent - 1 && <span className="level-num" title={'Livello ' + indent}>{indent}</span>}
+            </span>
           ))}
           {selectMode && (
             <span className={'sel-box' + (isSel ? ' on' : '')} data-block-id={b.id}
@@ -660,7 +662,6 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
               onPointerEnter={() => { if (selDrag.current) selDragEnter(b.id) }}>{isSel ? '✓' : ''}</span>
           )}
           <span className="handle" title="Trascina · dx/sx per nidificare">⠿</span>
-          {indent > 0 && <span className="level-badge" title={'Livello ' + indent}>{indent}</span>}
           {editing === b.id ? (
             <textarea autoFocus value={b.text} rows={Math.max(1, b.text.split('\n').length)}
               onChange={e => setText(b.id, e.target.value)}

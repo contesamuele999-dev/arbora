@@ -457,12 +457,16 @@ a { color: var(--accent); text-decoration: none; }
   border-left: 2px solid currentColor; border-bottom: 2px solid currentColor;
   border-bottom-left-radius: 8px; opacity: .55;
 }
-.level-badge {
-  flex: 0 0 auto; min-width: 16px; height: 16px; padding: 0 4px; margin-top: 3px;
-  display: grid; place-items: center; font-size: 10px; font-weight: 800; line-height: 1;
-  color: var(--green-bright); background: color-mix(in srgb, var(--green-deep) 25%, var(--bg-2));
-  border: 1px solid color-mix(in srgb, var(--green-deep) 55%, transparent); border-radius: 6px; user-select: none;
+/* numero di livello: sovrapposto alla linea/curva invece di occupare una colonna a parte
+   (un piccolo "pallino" che interrompe il tratto, come nelle UI ad albero moderne) */
+.level-num {
+  position: absolute; left: 9px; top: -2px; transform: translate(-50%, -50%); z-index: 1;
+  width: 13px; height: 13px; border-radius: 50%; background: var(--panel);
+  display: grid; place-items: center; font-size: 8.5px; font-weight: 800; line-height: 1;
+  color: var(--green-bright); border: 1px solid color-mix(in srgb, var(--green-deep) 55%, transparent);
+  user-select: none;
 }
+.block:hover .level-num { background: var(--bg-2); }
 
 /* icona elimina riga — sempre visibile e chiaramente "rossa" */
 .block .row-del {
@@ -514,8 +518,9 @@ a { color: var(--accent); text-decoration: none; }
 /* pannello cestino */
 .trash-panel {
   margin: -4px 0 16px; padding: 12px 14px; border-radius: 12px;
-  background: var(--bg-2); border: 1px solid var(--border); animation: drop .18s ease;
+  background: var(--bg-2); border: 1px solid var(--border); animation: trashIn .14s ease;
 }
+@keyframes trashIn { from { opacity: 0; } to { opacity: 1; } }
 .trash-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .trash-sub { font-size: 11.5px; color: var(--text-dim); flex: 1; }
 .trash-empty { font-size: 13px; color: var(--text-dim); padding: 6px 2px; }
