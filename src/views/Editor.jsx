@@ -10,8 +10,6 @@ const MAX_INDENT = 6
 const INDENT_PX = 22     // larghezza di ogni guida di rientro (= un livello)
 const INDENT_STEP = 26   // px di trascinamento orizzontale per cambiare livello
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
-// colori delle guide di tabulazione: un colore per livello, per distinguerli a colpo d'occhio
-const GUIDE_COLORS = ['var(--green-deep)', 'var(--green)', 'var(--green-bright)', 'var(--accent)', 'var(--green)', 'var(--green-bright)']
 
 // Clipboard delle SEZIONI a livello di modulo: sopravvive al cambio vista,
 // così puoi tagliare/copiare una sezione da una vista e incollarla in un'altra.
@@ -650,13 +648,11 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           onDrop={e => onDrop(e, b.id)}
           onDragEnd={endDrag}
         >
-          {/* guide di tabulazione: linee verticali per i livelli superiori, una "freccetta" ad angolo per l'ultimo (stile schema ad albero) */}
+          {/* guide di tabulazione: linee verticali sottili per i livelli superiori, una curva "╰─"
+              per l'ultimo livello (stile schema ad albero, disegnata coi bordi: niente glifi di
+              testo che finivano nascosti dietro la maniglia ⠿) */}
           {Array.from({ length: indent }).map((_, i) => (
-            <span key={i}
-              className={'indent-guide' + (i === indent - 1 ? ' indent-elbow' : '')}
-              style={{ color: GUIDE_COLORS[i % GUIDE_COLORS.length] }}>
-              {i === indent - 1 && <span className="elbow-arrow">›</span>}
-            </span>
+            <span key={i} className={'indent-guide' + (i === indent - 1 ? ' indent-elbow' : '')} />
           ))}
           {selectMode && (
             <span className={'sel-box' + (isSel ? ' on' : '')} data-block-id={b.id}

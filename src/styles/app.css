@@ -127,14 +127,19 @@ a { color: var(--accent); text-decoration: none; }
 }
 .vision-block.dragging { opacity: .4; }
 .vision-block.drop-target { box-shadow: 0 0 0 2px var(--vcol) inset; }
-/* riordino visioni: una riga separatrice REALE tra due sezioni (non un pseudo-elemento:
-   .vision-block ha overflow:hidden, quindi un ::before/::after con offset negativo
-   veniva tagliato via e la riga non si vedeva mai) */
+/* riordino visioni: una riga separatrice tra due sezioni. È un elemento reale (non un
+   pseudo-elemento di .vision-block, che ha overflow:hidden e la taglierebbe via) ma
+   position:absolute così NON occupa spazio nel flusso: se fosse in-flow, comparire/sparire
+   sposterebbe le sezioni sotto al cursore e il bordo before/after continuerebbe a "sfarfallare". */
 .vision-drop-wrap { position: relative; }
 .pipe-dropline {
-  height: 3px; margin: 6px 18px; border-radius: 3px;
+  position: absolute; left: 18px; right: 18px; height: 3px; border-radius: 3px;
   background: var(--green-bright); box-shadow: 0 0 8px var(--green-bright);
+  opacity: 0; pointer-events: none; transition: opacity .1s; z-index: 6;
 }
+.pipe-dropline.at-top { top: -8px; }
+.pipe-dropline.at-bottom { bottom: -8px; }
+.pipe-dropline.show { opacity: 1; }
 .drag-handle { cursor: grab; font-size: 16px; color: var(--text-dim); flex: 0 0 auto; touch-action: none; user-select: none; }
 .drag-handle:active { cursor: grabbing; }
 .vision-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
@@ -435,26 +440,23 @@ a { color: var(--accent); text-decoration: none; }
 @keyframes slideFromLeft { from { transform: translateX(-28px); opacity: .3; } to { transform: translateX(0); opacity: 1; } }
 
 /* ---------- Editor: blocchi nidificati ---------- */
-/* guide di tabulazione: per i livelli "di passaggio" resta una linea verticale sottile
-   (il ramo continua sopra/sotto); l'ULTIMO livello diventa una freccetta ad angolo
-   (stile schema ad albero: └─›) che punta al contenuto della riga. */
+/* guide di tabulazione, stile "file tree" moderno e monocromatico (niente più barre
+   colorate a rotazione): per i livelli "di passaggio" una linea verticale sottile e
+   uniforme; l'ULTIMO livello si incurva verso il contenuto con un angolo arrotondato
+   ╰─ disegnato coi bordi (nessun glifo di testo: prima restava nascosto dietro ⠿). */
 .indent-guide {
-  flex: 0 0 auto; width: 22px; align-self: stretch; margin: 2px 0; position: relative;
+  flex: 0 0 auto; width: 20px; align-self: stretch; margin: 2px 0; position: relative;
+  color: var(--text-dim);
 }
 .indent-guide:not(.indent-elbow)::before {
-  content: ''; position: absolute; left: 0; top: -2px; bottom: -2px; width: 2px;
-  background: currentColor; opacity: .55; border-radius: 2px;
+  content: ''; position: absolute; left: 9px; top: -2px; bottom: -2px; width: 1.5px;
+  background: currentColor; opacity: .35;
 }
-.indent-elbow { display: flex; align-items: center; }
 .indent-elbow::before {
-  content: ''; position: absolute; left: 0; top: -2px; bottom: 50%; width: 2px;
-  background: currentColor; opacity: .55; border-radius: 2px;
+  content: ''; position: absolute; left: 9px; top: -2px; width: 11px; height: 16px;
+  border-left: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  border-bottom-left-radius: 8px; opacity: .55;
 }
-.indent-elbow::after {
-  content: ''; position: absolute; left: 0; top: 50%; width: 12px; height: 2px;
-  background: currentColor; opacity: .8; transform: translateY(-1px);
-}
-.indent-elbow .elbow-arrow { position: relative; left: 10px; font-size: 12px; line-height: 1; color: currentColor; opacity: .9; user-select: none; }
 .level-badge {
   flex: 0 0 auto; min-width: 16px; height: 16px; padding: 0 4px; margin-top: 3px;
   display: grid; place-items: center; font-size: 10px; font-weight: 800; line-height: 1;

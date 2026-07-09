@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { stageOf } from '../lib/stages.js'
 
 // ============================================================
@@ -11,6 +11,7 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
   const [dragVisId, setDragVisId] = useState(null)
   const [overVisId, setOverVisId] = useState(null)          // visione target per lo spostamento di una VISTA (evidenzia il contenitore)
   const [reorderOver, setReorderOver] = useState(null)       // { id, edge } per il riordino VISIONI (mostra una riga separatrice)
+  const reorderRef = useRef(null)                            // ultimo edge "bloccato": serve per l'isteresi anti-tremolio
   const [dragVistaId, setDragVistaId] = useState(null)   // vista trascinata verso un'altra visione
   const preview = (v) => (v.blocchi || []).map(b => b.text).join(' ').replace(/[#*`>]/g, '').slice(0, 140)
 
@@ -56,9 +57,9 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
 
       {sezioni.map(({ vis, list, total }) => (
         <div key={vis.id} className="vision-drop-wrap">
-        {reorderOver?.id === vis.id && reorderOver.edge === 'before' && dragVisId && dragVisId !== vis.id && (
-          <div className="pipe-dropline" />
-        )}
+        <div className={'pipe-dropline'
+          + (reorderOver?.id === vis.id && dragVisId && dragVisId !== vis.id ? ' show' : '')
+          + (reorderOver?.edge === 'after' ? ' at-bottom' : ' at-top')} />
         <section
           className={'vision-block'
             + (dragVisId === vis.id ? ' dragging' : '')
@@ -69,13 +70,24 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
             if (dragVisId) {
               e.preventDefault()
               const r = e.currentTarget.getBoundingClientRect()
-              const edge = (e.clientY - r.top) < r.height / 2 ? 'before' : 'after'
-              setReorderOver({ id: vis.id, edge })
+              const mid = r.top + r.height / 2
+              const BUFFER = 14   // zona morta attorno al centro: evita che l'edge sfarfalli avanti/indietro
+              const cur = reorderRef.current?.id === vis.id ? reorderRef.current.edge : (e.clientY < mid ? 'before' : 'after')
+              let edge = cur
+              if (cur === 'before' && e.clientY > mid + BUFFER) edge = 'after'
+              else if (cur === 'after' && e.clientY < mid - BUFFER) edge = 'before'
+              if (reorderRef.current?.id !== vis.id || reorderRef.current.edge !== edge) {
+                reorderRef.current = { id: vis.id, edge }
+                setReorderOver({ id: vis.id, edge })
+              }
             } else if (dragVistaId) {
               e.preventDefault(); setOverVisId(vis.id)
             }
           }}
-          onDragLeave={() => { setOverVisId(id => id === vis.id ? null : id); setReorderOver(o => o?.id === vis.id ? null : o) }}
+          onDragLeave={() => {
+            setOverVisId(id => id === vis.id ? null : id)
+            if (reorderRef.current?.id === vis.id) { reorderRef.current = null; setReorderOver(null) }
+          }}
           onDrop={e => {
             e.preventDefault()
             if (!q && dragVisId && dragVisId !== vis.id) onReorderVisioni(dragVisId, vis.id, reorderOver?.edge || 'before')
@@ -83,6 +95,7 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
               const v = viste.find(x => x.id === dragVistaId)
               if (v && v.visione_id !== vis.id) onMoveVistaToVisione?.(dragVistaId, vis.id)
             }
+            reorderRef.current = null
             setDragVisId(null); setDragVistaId(null); setOverVisId(null); setReorderOver(null)
           }}>
           <header className="vision-head">
@@ -90,7 +103,7 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
               <span className="drag-handle" title="Trascina per riordinare"
                 draggable
                 onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragVisId(vis.id) }}
-                onDragEnd={() => { setDragVisId(null); setReorderOver(null) }}>⠿</span>
+                onDragEnd={() => { reorderRef.current = null; setDragVisId(null); setReorderOver(null) }}>⠿</span>
             )}
             <label className="vision-swatch" title="Colore della visione">
               <input type="color" value={vis.colore || '#2e9e63'}
@@ -128,9 +141,6 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
             {!list.length && <div className="vista-empty">{q ? 'Nessuna vista corrisponde qui.' : 'Nessuna vista: aggiungine una.'}</div>}
           </div>
         </section>
-        {reorderOver?.id === vis.id && reorderOver.edge === 'after' && dragVisId && dragVisId !== vis.id && (
-          <div className="pipe-dropline" />
-        )}
         </div>
       ))}
 
