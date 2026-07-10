@@ -704,7 +704,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
             <li><b>🔍</b> cerca nella vista · <b>🔗</b> collega vista · swipe ←/→ cambia vista</li>
           </ul>
         </div>
-        <div className="toolbar" onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()}>
+        <div className="toolbar" data-noswipe="" onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()}>
           <button className="iconbtn" title="Annulla (Ctrl+Z)" onClick={undo}>↶</button>
           <button className="iconbtn" title="Ripeti (Ctrl+Y)" onClick={redo}>↷</button>
           <button className="iconbtn" title="Titolo" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, '# ' + (blocks.find(b=>b.id===id)?.text||'')) }}>H</button>
@@ -724,7 +724,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         </div>
 
         {/* Riga azioni: copia foglio · selezione · incolla · cestino */}
-        <div className="toolbar toolbar-2" onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()}>
+        <div className="toolbar toolbar-2" data-noswipe="" onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()}>
           {!selectMode ? (
             <>
               <button className="pillbtn" title="Copia tutto il foglio" onClick={copySheet}>⧉ Copia foglio</button>
@@ -788,6 +788,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         {search && <button className="view-search-clear" title="Pulisci" onClick={() => setSearch('')}>✕</button>}
       </div>
 
+      <div className="blocks-list" data-noswipe="">
       {blocks.map(b => {
         const indent = b.indent || 0
         const isSel = selected.has(b.id)
@@ -862,6 +863,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         </div>
         )
       })}
+      </div>
 
       <button className="add-btn" style={{marginTop:12}} onClick={() => addBlock(null)}>＋ Aggiungi blocco in fondo</button>
 
