@@ -225,9 +225,9 @@ a { color: var(--accent); text-decoration: none; }
 /* ---------- Editor ---------- */
 .editor { max-width: 760px; margin: 0 auto; padding: 18px 16px 120px; outline: none; animation: editorIn .24s cubic-bezier(.22,.7,.3,1); }
 @keyframes editorIn { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }
-.editor-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.editor-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; padding-right: 130px; }
 .editor-title {
-  flex: 1; min-width: 0; background: transparent; border: none; color: var(--text); font-size: 26px;
+  flex: 0 1 auto; min-width: 0; background: transparent; border: none; color: var(--text); font-size: 26px;
   font-weight: 800; outline: none;
 }
 .save-state {
@@ -259,7 +259,8 @@ a { color: var(--accent); text-decoration: none; }
 .block .rendered { flex: 1; line-height: 1.6; cursor: text; min-height: 1.6em; touch-action: pan-y; }
 .block textarea {
   flex: 1; background: var(--bg-2); border: 1px solid var(--green-deep); border-radius: 8px;
-  color: var(--text); font: inherit; padding: 8px 10px; resize: none; outline: none; line-height: 1.6;
+  color: var(--text); font: inherit; padding: 8px 10px; resize: vertical; overflow: hidden; outline: none;
+  line-height: 1.6; min-height: 2.6em; box-sizing: border-box;
 }
 .block .copytap { font-size: 11px; color: var(--text-dim); opacity: 0; transition: .15s; padding: 4px; }
 .block:hover .copytap { opacity: 1; }
@@ -389,6 +390,35 @@ a { color: var(--accent); text-decoration: none; }
   border-radius: 10px; padding: 9px 12px; margin-bottom: 20px; font-size: 12.5px; color: var(--text-dim); line-height: 1.5;
 }
 .link-hint code { background: var(--bg); padding: 1px 5px; border-radius: 4px; color: var(--green-bright); }
+.hint-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+.hint-list li { line-height: 1.45; }
+
+/* ---------- Ricerca dentro la vista ---------- */
+.view-search {
+  display: flex; align-items: center; gap: 8px; margin: 2px 0 12px;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px;
+}
+.view-search-ico { font-size: 14px; opacity: .8; }
+.view-search-input {
+  flex: 1; min-width: 0; background: transparent; border: none; outline: none;
+  color: var(--text); font: inherit; font-size: 14px;
+}
+.view-search-count { font-size: 12px; color: var(--green-bright); font-weight: 700; white-space: nowrap; }
+.view-search-clear {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--text-dim); font-size: 13px;
+}
+.block.search-dim { opacity: .32; }
+.block.search-hit { background: color-mix(in srgb, var(--green-bright) 14%, var(--bg-2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green-bright) 40%, transparent); }
+
+/* ---------- Inserimento riga (＋ per riga, anche in mezzo) ---------- */
+.block .row-insert {
+  flex: 0 0 auto; width: 28px; height: 28px; border-radius: 8px; font-size: 16px; line-height: 1;
+  border: 1px dashed var(--green-deep); background: var(--panel); color: var(--green-bright);
+  opacity: .45; transition: opacity .12s, background .12s, border-color .12s; cursor: pointer;
+}
+.block:hover .row-insert { opacity: 1; }
+.block .row-insert:hover { background: var(--panel-2); border-color: var(--green-bright); }
 
 /* ---------- Suggerimento collegamenti ---------- */
 .link-suggest {
@@ -439,6 +469,13 @@ a { color: var(--accent); text-decoration: none; }
   .theme-grid { grid-template-columns: 1fr; }
 
   .pomodoro { right: 12px; bottom: 12px; }
+
+  /* Righe più comode da telefono: casella di scrittura più alta e leggibile,
+     pulsanti azione sempre visibili (niente hover sul touch). */
+  .editor-head { padding-right: 0; }
+  .block textarea { min-height: 3.2em; font-size: 16px; padding: 10px 12px; }
+  .block .row-insert, .block .row-clear, .block .row-del { opacity: 1; }
+  .block .row-insert { width: 32px; height: 32px; }
 }
 
 @media (max-width: 380px) {

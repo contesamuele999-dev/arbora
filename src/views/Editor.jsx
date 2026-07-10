@@ -63,6 +63,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const [showTrash, setShowTrash] = useState(false)
   const [saveState, setSaveState] = useState('idle')   // idle | saving | saved | local
   const [clipCount, setClipCount] = useState(SECTION_CLIP.length)
+  const [search, setSearch] = useState('')             // ricerca fra le righe DENTRO questa vista
   const undoStack = useRef([])
   const redoStack = useRef([])
   const saveTimer = useRef(null)
@@ -89,7 +90,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     setBlocks(b)
     setTitle(vista.titolo || '')
     setTrash(cleanTrash)
-    setEditing(null); setSelectMode(false); setSelected(new Set()); setShowTrash(false)
+    setEditing(null); setSelectMode(false); setSelected(new Set()); setShowTrash(false); setSearch('')
     prevChars.current = totalChars(vista.blocchi)
     undoStack.current = []; redoStack.current = []
     if ((vista.cestino || []).length !== cleanTrash.length) {
@@ -190,6 +191,12 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         if (tag === 'INPUT' || tag === 'TEXTAREA') return   // lascia fare la copia nativa dentro un campo
         e.preventDefault()
         copySection()
+      }
+      else if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X') && selectMode && selected.size) {
+        const tag = document.activeElement?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return   // lascia fare il taglio nativo dentro un campo
+        e.preventDefault()
+        cutSection()
       }
     }
     window.addEventListener('keydown', h)
@@ -317,10 +324,24 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     setToast('Foglio copiato'); setTimeout(() => setToast(''), 1200)
   }
 
-  // ---- click = modifica · doppio click = copia (con discriminatore) ----
+  // ---- click = modifica · doppio click = copia · triplo click/tap = selezione ----
+  const tapRef = useRef({ id: null, n: 0, t: null })
   const activateBlock = (b) => {
     if (rowJustHandled.current) { rowJustHandled.current = false; return }  // veniamo da un drag/swipe della riga
     if (selectMode) { toggleSelect(b.id); return }
+    // conteggio tap ravvicinati sulla stessa riga: 3 = attiva la selezione
+    const tr = tapRef.current
+    if (tr.id !== b.id) { tr.id = b.id; tr.n = 0 }
+    tr.n++
+    clearTimeout(tr.t)
+    if (tr.n >= 3) {
+      tr.n = 0; tr.id = null
+      if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null }
+      setEditing(null); setSelectMode(true); setSelected(new Set([b.id]))
+      try { navigator.vibrate?.(12) } catch { /* ignore */ }
+      return
+    }
+    tr.t = setTimeout(() => { tr.id = null; tr.n = 0 }, 480)
     if (clickTimer.current) return               // arriverà il doppio click
     clickTimer.current = setTimeout(() => { clickTimer.current = null; setEditing(b.id) }, 230)
   }
@@ -620,6 +641,19 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
   const isPlain = (t) => t && !t.startsWith('#') && t.trim() !== '---'
 
+  // ---- ricerca dentro la vista: evidenzia le righe che contengono il testo cercato ----
+  const sq = search.trim().toLowerCase()
+  const matchSet = useMemo(() => {
+    if (!sq) return null
+    const s = new Set()
+    blocks.forEach(b => { if ((b.text || '').toLowerCase().includes(sq)) s.add(b.id) })
+    return s
+  }, [sq, blocks])
+  const matchCount = matchSet ? matchSet.size : 0
+
+  // auto-altezza della textarea: cresce col contenuto (anche con testo mandato a capo)
+  const autosize = (el) => { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }
+
   return (
     <div className="editor" ref={rootRef} tabIndex={-1}>
       <div className="editor-head">
@@ -660,7 +694,16 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
       {!focusMode && (
         <>
-        <div className="link-hint">💡 <b>Click</b> su una riga = modifica · <b>doppio click</b> = copia · icona 🗑 = elimina (recuperabile 7 giorni). Trascina a <b>destra/sinistra</b> per nidificare. Nel testo: <code>Ctrl+B</code> grassetto, <code>Ctrl+I</code> corsivo.</div>
+        <div className="link-hint">
+          <ul className="hint-list">
+            <li><b>Tap</b> riga = modifica · <b>doppio</b> = copia · <b>triplo</b> = selezione</li>
+            <li><b>＋</b> nuova riga (anche in mezzo) · <b>⌫</b> svuota · <b>🗑</b> elimina (7 gg)</li>
+            <li><b>Invio</b> nuova riga · <b>Tab</b>/<b>⇤⇥</b> nidifica · trascina ←/→</li>
+            <li><code>Ctrl+B</code> grassetto · <code>Ctrl+I</code> corsivo · <code>Ctrl+Z</code>/<code>Ctrl+Y</code> annulla/ripeti</li>
+            <li><b>☑ Seleziona</b> → <code>Ctrl+C</code> copia · <code>Ctrl+X</code> taglia · <b>📌</b> incolla</li>
+            <li><b>🔍</b> cerca nella vista · <b>🔗</b> collega vista · swipe ←/→ cambia vista</li>
+          </ul>
+        </div>
         <div className="toolbar" onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()}>
           <button className="iconbtn" title="Annulla (Ctrl+Z)" onClick={undo}>↶</button>
           <button className="iconbtn" title="Ripeti (Ctrl+Y)" onClick={redo}>↷</button>
@@ -737,12 +780,21 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         </div>
       )}
 
+      <div className="view-search" data-noswipe="">
+        <span className="view-search-ico">🔍</span>
+        <input className="view-search-input" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Cerca in questa vista…" />
+        {sq && <span className="view-search-count">{matchCount} ris.</span>}
+        {search && <button className="view-search-clear" title="Pulisci" onClick={() => setSearch('')}>✕</button>}
+      </div>
+
       {blocks.map(b => {
         const indent = b.indent || 0
         const isSel = selected.has(b.id)
+        const isHit = matchSet ? matchSet.has(b.id) : false
         return (
         <div key={b.id} data-block-id={b.id} data-noswipe=""
-          className={'block' + (dragId === b.id ? ' dragging' : '') + (dropId === b.id ? ' drop-target' : '') + (indent ? ' nested' : '') + (isSel ? ' selected' : '')}
+          className={'block' + (dragId === b.id ? ' dragging' : '') + (dropId === b.id ? ' drop-target' : '') + (indent ? ' nested' : '') + (isSel ? ' selected' : '') + (matchSet && !isHit ? ' search-dim' : '') + (isHit ? ' search-hit' : '')}
           draggable={editing !== b.id && !selectMode}
           onDragStart={e => onDragStart(e, b.id)}
           onDragOver={e => onDragOver(e, b.id)}
@@ -765,8 +817,10 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           <span className="handle" title="Trascina · dx/sx per nidificare">⠿</span>
           {editing === b.id ? (
             <textarea
-              ref={el => { if (el && document.activeElement !== el) el.focus({ preventScroll: true }) }}
-              value={b.text} rows={Math.max(1, b.text.split('\n').length)}
+              className="row-input"
+              ref={el => { if (el) { autosize(el); if (document.activeElement !== el) el.focus({ preventScroll: true }) } }}
+              value={b.text} rows={1}
+              onInput={e => autosize(e.target)}
               onChange={e => setText(b.id, e.target.value)}
               onBlur={() => setEditing(null)}
               onPaste={e => {
@@ -801,11 +855,15 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
             <button className="iconbtn row-del" title="Elimina riga (recuperabile 7 giorni)"
               onClick={() => deleteBlock(b.id)}>🗑</button>
           )}
+          {!selectMode && (
+            <button className="row-insert" title="Inserisci una riga qui sotto"
+              onClick={() => addBlock(b.id)}>＋</button>
+          )}
         </div>
         )
       })}
 
-      <button className="add-btn" style={{marginTop:12}} onClick={() => addBlock(null)}>＋ Aggiungi blocco</button>
+      <button className="add-btn" style={{marginTop:12}} onClick={() => addBlock(null)}>＋ Aggiungi blocco in fondo</button>
 
       {ghost && <div className="drag-ghost" style={{ left: ghost.x + 14, top: ghost.y + 10 }}>{shortText(ghost.text)}</div>}
       {toast && <div className="editor-toast">{toast}</div>}

@@ -417,7 +417,7 @@ export default function App() {
   return (
     <div className="app">
       <div className="topbar">
-        <div className="brand"><BrandLogo /><span>Arbora</span></div>
+        <div className="brand"><BrandLogo /><span>Arbora Notes</span></div>
         <div className="spacer" />
         <div className="tabs">
           {TABS.map((t, i) => {
@@ -616,23 +616,30 @@ function BrandLogo() {
   return (
     <svg className="brand-logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <rect width="512" height="512" rx="112" fill="var(--panel-2)" stroke="var(--border)" strokeWidth="6" />
-      <g stroke="var(--green)" strokeWidth="14" strokeLinecap="round" fill="none" opacity="0.9">
-        <path d="M256 392 L256 300" />
-        <path d="M256 300 L160 220" />
-        <path d="M256 300 L352 220" />
-        <path d="M160 220 L112 150" />
-        <path d="M160 220 L208 150" />
-        <path d="M352 220 L304 150" />
-        <path d="M352 220 L400 150" />
+      {/* struttura ad albero come nel Tree dell'app */}
+      <g fill="none" stroke="var(--green-bright)" strokeWidth="7" strokeLinecap="round" opacity="0.9">
+        <path d="M104 172 L104 210 Q104 220 114 220 L192 220" />
+        <path d="M220 244 L220 275 Q220 285 230 285 L290 285" />
+        <path d="M104 172 L104 344 Q104 354 114 354 L192 354" />
       </g>
-      <circle cx="256" cy="408" r="30" fill="var(--green-deep)" />
-      <circle cx="256" cy="300" r="22" fill="var(--green)" />
-      <circle cx="160" cy="220" r="20" fill="var(--green)" />
-      <circle cx="352" cy="220" r="20" fill="var(--green)" />
-      <circle cx="112" cy="150" r="18" fill="var(--green-bright)" />
-      <circle cx="208" cy="150" r="18" fill="var(--green-bright)" />
-      <circle cx="304" cy="150" r="18" fill="var(--green-bright)" />
-      <circle cx="400" cy="150" r="18" fill="var(--green-bright)" />
+      <g stroke="var(--green)" strokeWidth="4" fill="var(--panel)">
+        <rect x="82" y="122" width="152" height="50" rx="14" />
+        <rect x="190" y="198" width="150" height="46" rx="13" />
+        <rect x="288" y="263" width="134" height="44" rx="12" />
+        <rect x="190" y="332" width="150" height="46" rx="13" />
+      </g>
+      <g stroke="none">
+        <circle cx="104" cy="147" r="9" fill="var(--green-bright)" />
+        <circle cx="211" cy="221" r="8" fill="var(--green-bright)" />
+        <circle cx="308" cy="285" r="8" fill="var(--green-bright)" />
+        <circle cx="211" cy="355" r="8" fill="var(--green-bright)" />
+      </g>
+      <g fill="var(--text)" opacity="0.6">
+        <rect x="122" y="139" width="94" height="8" rx="4" />
+        <rect x="228" y="214" width="86" height="7" rx="3" />
+        <rect x="325" y="279" width="72" height="7" rx="3" />
+        <rect x="228" y="348" width="86" height="7" rx="3" />
+      </g>
     </svg>
   )
 }

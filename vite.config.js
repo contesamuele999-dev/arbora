@@ -15,9 +15,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'Arbora',
-        short_name: 'Arbora',
-        description: 'Note ad albero per imprenditori: Vite, Visioni, Viste.',
+        name: 'Arbora Notes',
+        short_name: 'Arbora Notes',
+        description: 'Note ad albero per imprenditori: Visioni, Viste, Progresso.',
         theme_color: '#1f7a4d',
         background_color: '#0f1411',
         display: 'standalone',
