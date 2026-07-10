@@ -319,6 +319,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
   // ---- click = modifica · doppio click = copia (con discriminatore) ----
   const activateBlock = (b) => {
+    if (rowJustHandled.current) { rowJustHandled.current = false; return }  // veniamo da un drag/swipe della riga
     if (selectMode) { toggleSelect(b.id); return }
     if (clickTimer.current) return               // arriverà il doppio click
     clickTimer.current = setTimeout(() => { clickTimer.current = null; setEditing(b.id) }, 230)
@@ -380,15 +381,28 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const exitSelect = () => { setSelectMode(false); setSelected(new Set()) }
 
   // ---- Copia / Taglia / Incolla SEZIONI (blocco + suo sotto-albero) ----
+  // livello di un titolo markdown: "# "=1, "## "=2, "### "=3; 0 se non è un titolo
+  const headingLevel = (t) => { const m = (t || '').match(/^(#{1,6})\s/); return m ? m[1].length : 0 }
   const expandToSection = () => {
     if (!selected.size) return
     const ids = new Set(selected)
     blocks.forEach((b, i) => {
       if (!selected.has(b.id)) return
-      const base = b.indent || 0
-      for (let j = i + 1; j < blocks.length; j++) {
-        if ((blocks[j].indent || 0) > base) ids.add(blocks[j].id)
-        else break
+      const hl = headingLevel(b.text)
+      if (hl > 0) {
+        // sezione a TITOLI: dal titolo fino al prossimo titolo di pari o maggiore livello
+        for (let j = i + 1; j < blocks.length; j++) {
+          const jl = headingLevel(blocks[j].text)
+          if (jl > 0 && jl <= hl) break
+          ids.add(blocks[j].id)
+        }
+      } else {
+        // sezione a RIENTRO: il blocco + il suo sotto-albero (figli più indentati)
+        const base = b.indent || 0
+        for (let j = i + 1; j < blocks.length; j++) {
+          if ((blocks[j].indent || 0) > base) ids.add(blocks[j].id)
+          else break
+        }
       }
     })
     setSelected(ids)
@@ -426,6 +440,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     const base = sel.length && anchor ? (anchor.indent || 0) : 0
     const inserted = SECTION_CLIP.map(c => ({ id: uid(), text: c.text, indent: Math.min(MAX_INDENT, base + c.indent) }))
     const next = [...blocks.slice(0, idx + 1), ...inserted, ...blocks.slice(idx + 1)]
+    logPasteChars(inserted.reduce((s, c) => s + c.text.length, 0))
     pushUndo(blocks)
     setBlocks(next); persist(next, title, trash)
     setToast(`Incollate ${inserted.length} righe`); setTimeout(() => setToast(''), 1300)
@@ -479,6 +494,91 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     setDragId(null); setDropId(null); setGhost(null)
   }
   const endDrag = () => { setDragId(null); setDropId(null); setGhost(null) }
+
+  // ---- TOUCH: trascina la riga premendo in mezzo ----
+  // Tocco+attesa (long-press) al centro della riga → modalità trascinamento:
+  //   • muovi in verticale = riordina · muovi in orizzontale = cambia livello di nidificazione.
+  // Swipe orizzontale rapido (senza attesa) al centro della riga → ±1 livello.
+  // (Su desktop resta il drag HTML5 con la maniglia ⠿.)
+  const rowDrag = useRef(null)
+  const rowJustHandled = useRef(false)   // evita che il click apra la modifica dopo drag/swipe
+  const LONGPRESS_MS = 260
+  const SWIPE_MIN = 42
+
+  const onRowDown = (e, b) => {
+    rowJustHandled.current = false
+    if (selectMode || editing === b.id || e.pointerType === 'mouse') return
+    const el = e.currentTarget
+    const d = {
+      id: b.id, el, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY,
+      lastX: e.clientX, lastY: e.clientY, startIndent: b.indent || 0, text: b.text,
+      active: false, over: null,
+    }
+    d.timer = setTimeout(() => {
+      d.active = true
+      try { el.setPointerCapture?.(d.pointerId) } catch { /* ignore */ }
+      setDragId(b.id)
+      setGhost({ x: d.lastX, y: d.lastY, text: d.text })
+      try { navigator.vibrate?.(12) } catch { /* ignore */ }
+    }, LONGPRESS_MS)
+    rowDrag.current = d
+  }
+  const onRowMove = (e) => {
+    const d = rowDrag.current
+    if (!d) return
+    d.lastX = e.clientX; d.lastY = e.clientY
+    if (!d.active) {
+      // prima del long-press: se il dito si muove troppo è uno scroll/swipe → annulla il timer
+      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 12) { clearTimeout(d.timer); d.timedOut = true }
+      return
+    }
+    e.preventDefault()
+    setGhost(g => (g ? { ...g, x: e.clientX, y: e.clientY } : g))
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.block')
+    const overId = el?.getAttribute('data-block-id')
+    if (overId && overId !== d.id) { d.over = overId; setDropId(overId) }
+    else if (!overId) setDropId(null)
+  }
+  const onRowUp = (e) => {
+    const d = rowDrag.current
+    if (!d) return
+    clearTimeout(d.timer); rowDrag.current = null
+    const dx = (e.clientX ?? d.lastX) - d.sx
+    const dy = (e.clientY ?? d.lastY) - d.sy
+    if (!d.active) {
+      // niente long-press: swipe orizzontale rapido = ±1 livello di nidificazione
+      if (Math.abs(dx) >= SWIPE_MIN && Math.abs(dx) > Math.abs(dy) * 1.6) {
+        rowJustHandled.current = true
+        const i = blocks.findIndex(x => x.id === d.id)
+        if (dx > 0) setIndent(d.id, Math.min(maxIndentFor(blocks, i), (blocks[i]?.indent || 0) + 1))
+        else setIndent(d.id, Math.max(0, (blocks[i]?.indent || 0) - 1))
+      }
+      return   // altrimenti è un tap: lascia gestire la modifica a onClick
+    }
+    // era un drag: riordino (verticale) + eventuale cambio livello (delta orizzontale)
+    rowJustHandled.current = true
+    const stepDelta = Math.round(dx / INDENT_STEP)
+    let next = [...blocks]
+    if (d.over && d.over !== d.id) {
+      const from = next.findIndex(x => x.id === d.id)
+      const to = next.findIndex(x => x.id === d.over)
+      if (from !== -1 && to !== -1) { const [m] = next.splice(from, 1); next.splice(to, 0, m) }
+    }
+    if (stepDelta !== 0) {
+      const idx = next.findIndex(x => x.id === d.id)
+      const want = Math.max(0, d.startIndent + stepDelta)
+      const capped = Math.min(want, maxIndentFor(next, idx))
+      next = next.map(x => x.id === d.id ? { ...x, indent: capped } : x)
+    }
+    setDragId(null); setDropId(null); setGhost(null)
+    commit(next)
+  }
+  const onRowCancel = () => {
+    const d = rowDrag.current
+    if (!d) return
+    clearTimeout(d.timer); rowDrag.current = null
+    if (d.active) { setDragId(null); setDropId(null); setGhost(null) }
+  }
 
   const titleChange = (v) => { setTitle(v); persist(blocks, v, trash) }
 
@@ -566,7 +666,8 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           <button className="iconbtn" title="Ripeti (Ctrl+Y)" onClick={redo}>↷</button>
           <button className="iconbtn" title="Titolo" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, '# ' + (blocks.find(b=>b.id===id)?.text||'')) }}>H</button>
           <button className="iconbtn" title="Grassetto (Ctrl+B)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '**testo**') }}><b>B</b></button>
-          <button className="iconbtn" title="Corsivo (Ctrl+I)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '*testo*') }}><i>I</i></button>
+          <button className="iconbtn" title="Corsivo (Ctrl+I)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '*testo*') }}><i>c</i></button>
+          <button className="iconbtn" title="Maiuscoletto (^^testo^^)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '^^testo^^') }}><span className="smallcaps" style={{fontSize:'12px'}}>Ab</span></button>
           <button className="iconbtn" title="Rientra (nidifica)" onClick={() => { const id = editing || lastEdit.current; if (!id) return; const i = blocks.findIndex(b=>b.id===id); setIndent(id, Math.min(maxIndentFor(blocks, i), (blocks[i].indent||0)+1)) }}>⇥</button>
           <button className="iconbtn" title="Riduci rientro" onClick={() => { const id = editing || lastEdit.current; if (!id) return; const b = blocks.find(x=>x.id===id); setIndent(id, Math.max(0,(b.indent||0)-1)) }}>⇤</button>
           <button className="iconbtn" title="Sezione / divisore" onClick={() => addBlock(editing || lastEdit.current, '---')}>—</button>
@@ -640,7 +741,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         const indent = b.indent || 0
         const isSel = selected.has(b.id)
         return (
-        <div key={b.id}
+        <div key={b.id} data-block-id={b.id} data-noswipe=""
           className={'block' + (dragId === b.id ? ' dragging' : '') + (dropId === b.id ? ' drop-target' : '') + (indent ? ' nested' : '') + (isSel ? ' selected' : '')}
           draggable={editing !== b.id && !selectMode}
           onDragStart={e => onDragStart(e, b.id)}
@@ -663,7 +764,9 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           )}
           <span className="handle" title="Trascina · dx/sx per nidificare">⠿</span>
           {editing === b.id ? (
-            <textarea autoFocus value={b.text} rows={Math.max(1, b.text.split('\n').length)}
+            <textarea
+              ref={el => { if (el && document.activeElement !== el) el.focus({ preventScroll: true }) }}
+              value={b.text} rows={Math.max(1, b.text.split('\n').length)}
               onChange={e => setText(b.id, e.target.value)}
               onBlur={() => setEditing(null)}
               onPaste={e => {
@@ -681,8 +784,11 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
                 else if (e.key === 'Tab') { e.preventDefault(); const i = blocks.findIndex(x=>x.id===b.id); if (e.shiftKey) setIndent(b.id, Math.max(0,(b.indent||0)-1)); else setIndent(b.id, Math.min(maxIndentFor(blocks, i),(b.indent||0)+1)) }
               }} />
           ) : (
-            <div className="rendered" onClick={() => activateBlock(b)} onDoubleClick={() => doubleBlock(b)}
-              title="Click: modifica · Doppio click: copia">
+            <div className="rendered"
+              onPointerDown={e => onRowDown(e, b)} onPointerMove={onRowMove}
+              onPointerUp={onRowUp} onPointerCancel={onRowCancel}
+              onClick={() => activateBlock(b)} onDoubleClick={() => doubleBlock(b)}
+              title="Click: modifica · Doppio click: copia · tieni premuto per trascinare · swipe ←/→ per nidificare">
               {b.text ? <RenderedBlock text={b.text} onWikilink={onWikilink} /> : <span style={{color:'var(--text-dim)'}}>Vuoto — clicca per scrivere</span>}
             </div>
           )}

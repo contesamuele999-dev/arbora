@@ -23,6 +23,7 @@ export default function Tree({ viste, visioni = [], onOpen, onAddChild, onAddToV
   const [quick, setQuick] = useState(null)   // vista aperta nel pannello rapido
   const dragRef = useRef(null)
   const scrollRef = useRef(null)
+  const tapConsumed = useRef(false)   // true se l'ultimo gesto è stato un drag (non aprire il pannello)
 
   const { rows, byVista, byVisione, maxDepth } = useMemo(() => {
     const all = viste.filter(v => !v.is_template)
@@ -92,12 +93,16 @@ export default function Tree({ viste, visioni = [], onOpen, onAddChild, onAddToV
     const overType = node?.getAttribute('data-type')
     setDrag({ id: d.id, x: e.clientX, y: e.clientY, over: (overId && overId !== d.id) ? overId : null, overType })
   }
+  // il browser può convertire un tocco su un nodo in uno scroll del canvas e
+  // "rubare" il gesto (pointercancel): in quel caso azzera senza aprire nulla.
+  const onNodeCancel = () => { dragRef.current = null; setDrag(null) }
   const onNodeUp = () => {
     const d = dragRef.current; dragRef.current = null
     const info = drag; setDrag(null)
     if (!d) return
     // tap (o mini-drag senza un bersaglio valido, es. jitter del dito su tablet) = apri pannello
     if (!d.moved || !info?.over) { const r = byVista[d.id]; if (r) setQuick(r.v); return }
+    tapConsumed.current = true   // è stato un drag: il click successivo non deve aprire il pannello
     if (info.overType === 'visione') {                 // sposta la vista sotto un'altra visione
       if (onMoveToVisione) setAsk({ childId: d.id, visioneId: info.over })
       return
@@ -110,6 +115,12 @@ export default function Tree({ viste, visioni = [], onOpen, onAddChild, onAddToV
       }
       setAsk({ childId: d.id, parentId: info.over })
     }
+  }
+  // Fallback tap: su alcuni tablet il pointer-capture può far mancare onPointerUp;
+  // il click (sintetizzato dal tap) apre comunque il pannello, se non è stato un drag.
+  const onNodeClick = (id) => {
+    if (tapConsumed.current) { tapConsumed.current = false; return }
+    const r = byVista[id]; if (r) setQuick(r.v)
   }
 
   const W = PAD * 2 + (maxDepth + 1) * INDENT + 420
@@ -167,7 +178,9 @@ export default function Tree({ viste, visioni = [], onOpen, onAddChild, onAddToV
                 style={{ left: xOf(r), top: yOf(r), background: shade(r.depth) }}
                 onPointerDown={e => onNodeDown(e, r.v.id)}
                 onPointerMove={onNodeMove}
-                onPointerUp={onNodeUp}>
+                onPointerUp={onNodeUp}
+                onPointerCancel={onNodeCancel}
+                onClick={() => onNodeClick(r.v.id)}>
                 <span className="tnode-dot" style={{ background: st.color }} title={st.label} />
                 <span className="tnode-title">{r.v.titolo || 'Senza titolo'}</span>
                 <button className="tnode-add" title="Aggiungi vista figlia"

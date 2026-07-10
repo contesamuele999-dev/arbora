@@ -6,8 +6,12 @@ import { stageOf } from '../lib/stages.js'
 // e viste (card neutre con indicatore colore della fase).
 // Ricerca: priorità ai titoli delle viste, poi al contenuto.
 // ============================================================
-export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisione, onAddVista, onRenameVisione, onRecolorVisione, onDeleteVista, onDeleteVisione, onReorderVisioni, onMoveVistaToVisione }) {
-  const [query, setQuery] = useState('')
+export default function Pipeline({ visioni, viste, query: queryProp, onQueryChange, onOpen, onPreview, onAddVisione, onAddVista, onRenameVisione, onRecolorVisione, onDeleteVista, onDeleteVisione, onReorderVisioni, onMoveVistaToVisione }) {
+  // la ricerca è controllata dall'alto (App) così non si azzera aprendo/chiudendo una vista;
+  // fallback a stato locale se il componente viene usato senza le prop.
+  const [queryLocal, setQueryLocal] = useState('')
+  const query = queryProp !== undefined ? queryProp : queryLocal
+  const setQuery = onQueryChange || setQueryLocal
   const [dragVisId, setDragVisId] = useState(null)
   const [overVisId, setOverVisId] = useState(null)          // visione target per lo spostamento di una VISTA (evidenzia il contenitore)
   const [reorderOver, setReorderOver] = useState(null)       // { id, edge } per il riordino VISIONI (mostra una riga separatrice)
@@ -26,7 +30,7 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
 
   // per ogni visione: viste filtrate e ordinate (titolo prima del contenuto)
   const sezioni = useMemo(() => {
-    return visioni.map(vis => {
+    let out = visioni.map(vis => {
       const mie = viste.filter(v => v.visione_id === vis.id)
       const visMatch = q && (vis.titolo || '').toLowerCase().includes(q)
       let list = mie.map(v => ({ v, s: scoreVista(v) }))
@@ -34,6 +38,13 @@ export default function Pipeline({ visioni, viste, onOpen, onPreview, onAddVisio
       list.sort((a, b) => b.s - a.s)
       return { vis, mie, list, visMatch, total: mie.length }
     }).filter(sez => !q || sez.list.length > 0 || sez.visMatch)
+    if (q) {
+      // priorità: sezioni con match nei TITOLI (visione o vista = punteggio 2) sopra
+      // quelle con match solo nel contenuto (1). Preserva l'ordine originale a parità.
+      const secScore = (s) => Math.max(s.visMatch ? 2 : 0, ...s.list.map(x => x.s), 0)
+      out = out.map((s, i) => ({ s, i })).sort((a, b) => secScore(b.s) - secScore(a.s) || a.i - b.i).map(x => x.s)
+    }
+    return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visioni, viste, q])
 

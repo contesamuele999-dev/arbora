@@ -223,15 +223,19 @@ a { color: var(--accent); text-decoration: none; }
 .add-btn:hover { background: var(--panel-2); }
 
 /* ---------- Editor ---------- */
-.editor { max-width: 760px; margin: 0 auto; padding: 18px 16px 120px; outline: none; }
+.editor { max-width: 760px; margin: 0 auto; padding: 18px 16px 120px; outline: none; animation: editorIn .24s cubic-bezier(.22,.7,.3,1); }
+@keyframes editorIn { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }
 .editor-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .editor-title {
   flex: 1; min-width: 0; background: transparent; border: none; color: var(--text); font-size: 26px;
   font-weight: 800; outline: none;
 }
 .save-state {
+  position: fixed; top: 54px; right: 14px; z-index: 40;
   flex: 0 0 auto; font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
-  border: 1px solid var(--border); white-space: nowrap; transition: opacity .2s; opacity: .9;
+  border: 1px solid var(--border); white-space: nowrap; transition: opacity .2s; opacity: .95;
+  background: var(--panel); box-shadow: 0 4px 12px rgba(0,0,0,.28); backdrop-filter: blur(4px);
+  pointer-events: none;
 }
 .save-state.idle { opacity: 0; }
 .save-state.saving { color: var(--text-dim); }
@@ -252,7 +256,7 @@ a { color: var(--accent); text-decoration: none; }
 .block.drop-target { box-shadow: inset 0 2px 0 var(--green-bright); }
 .handle { cursor: grab; color: var(--text-dim); padding: 4px; user-select: none; touch-action: none; font-size: 14px; }
 .handle:active { cursor: grabbing; }
-.block .rendered { flex: 1; line-height: 1.6; cursor: text; min-height: 1.6em; }
+.block .rendered { flex: 1; line-height: 1.6; cursor: text; min-height: 1.6em; touch-action: pan-y; }
 .block textarea {
   flex: 1; background: var(--bg-2); border: 1px solid var(--green-deep); border-radius: 8px;
   color: var(--text); font: inherit; padding: 8px 10px; resize: none; outline: none; line-height: 1.6;
@@ -267,6 +271,7 @@ a { color: var(--accent); text-decoration: none; }
 .rendered strong { color: #fff; }
 .rendered em { color: var(--accent); }
 .rendered code { background: var(--bg); padding: 2px 6px; border-radius: 5px; font-size: 13px; }
+.smallcaps { font-variant: small-caps; letter-spacing: .03em; }
 .rendered .wikilink { color: var(--green-bright); border-bottom: 1px dashed var(--green-deep); cursor: pointer; }
 .divider-block { border-top: 1px dashed var(--border); margin: 10px 0; height: 0; }
 
@@ -420,7 +425,15 @@ a { color: var(--accent); text-decoration: none; }
 
   .editor { padding: 14px 12px 130px; }
   .editor-title { font-size: 22px; }
-  .toolbar { top: 4px; }
+  /* Su mobile le barre strumenti restano su UNA riga e scorrono in orizzontale:
+     così l'icona 🔗 non va a capo creando una riga extra che copriva la barra
+     di selezione (toolbar-2, sticky a top:54). */
+  .toolbar { top: 4px; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .toolbar::-webkit-scrollbar { display: none; }
+  .toolbar .iconbtn { flex: 0 0 auto; }
+  .toolbar-2 { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .toolbar-2::-webkit-scrollbar { display: none; }
+  .toolbar-2 .pillbtn, .toolbar-2 .sel-count { flex: 0 0 auto; }
 
   .modal { padding: 18px; border-radius: 16px; }
   .theme-grid { grid-template-columns: 1fr; }
@@ -456,6 +469,12 @@ a { color: var(--accent); text-decoration: none; }
   content: ''; position: absolute; left: 9px; top: -2px; width: 11px; height: 16px;
   border-left: 2px solid currentColor; border-bottom: 2px solid currentColor;
   border-bottom-left-radius: 8px; opacity: .55;
+}
+/* freccetta stile schema ad albero: punta verso il contenuto della riga */
+.indent-elbow::after {
+  content: ''; position: absolute; left: 16px; top: 10px;
+  width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  border-left: 5px solid var(--green-bright); opacity: .85;
 }
 /* numero di livello: sovrapposto alla linea/curva invece di occupare una colonna a parte
    (un piccolo "pallino" che interrompe il tratto, come nelle UI ad albero moderne) */

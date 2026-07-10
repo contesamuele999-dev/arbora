@@ -27,6 +27,7 @@ export default function App() {
   const { user, loading, signOut, isDemo } = useAuth()
   const [tab, setTab] = useState('pipe')
   const [tabDir, setTabDir] = useState(0)      // -1 sx, +1 dx (per l'animazione swipe)
+  const [pipeQuery, setPipeQuery] = useState('')   // ricerca Pipe sollevata qui: sopravvive all'apertura di una vista.
   const [visioni, setVisioni] = useState([])
   const [viste, setViste] = useState([])
   const [links, setLinks] = useState([])
@@ -436,6 +437,7 @@ export default function App() {
         <div key={tab} className={'tab-pane ' + (tabDir < 0 ? 'from-left' : tabDir > 0 ? 'from-right' : '')}>
           {tab === 'pipe' && (
             <Pipeline visioni={visioni} viste={visteConFasi}
+              query={pipeQuery} onQueryChange={setPipeQuery}
               onOpen={setVistaAperta} onPreview={setPreview}
               onAddVisione={addVisione} onAddVista={(visioneId) => addVista({ visioneId })}
               onRenameVisione={renameVisione} onRecolorVisione={recolorVisione}
