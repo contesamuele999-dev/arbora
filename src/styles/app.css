@@ -225,13 +225,15 @@ a { color: var(--accent); text-decoration: none; }
 /* ---------- Editor ---------- */
 .editor { max-width: 760px; margin: 0 auto; padding: 18px 16px 120px; outline: none; animation: editorIn .24s cubic-bezier(.22,.7,.3,1); }
 @keyframes editorIn { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }
-.editor-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; padding-right: 130px; }
+.editor-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .editor-title {
   flex: 0 1 auto; min-width: 0; background: transparent; border: none; color: var(--text); font-size: 26px;
   font-weight: 800; outline: none;
 }
 .save-state {
-  position: fixed; top: 54px; right: 14px; z-index: 40;
+  /* In basso a destra: così non copre più i pulsanti dei modificatori di testo
+     (toolbar sticky) durante lo scroll, né resta incollato alla linea dell'header. */
+  position: fixed; bottom: 18px; right: 16px; top: auto; z-index: 40;
   flex: 0 0 auto; font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
   border: 1px solid var(--border); white-space: nowrap; transition: opacity .2s; opacity: .95;
   background: var(--panel); box-shadow: 0 4px 12px rgba(0,0,0,.28); backdrop-filter: blur(4px);
@@ -410,6 +412,87 @@ a { color: var(--accent); text-decoration: none; }
 }
 .block.search-dim { opacity: .32; }
 .block.search-hit { background: color-mix(in srgb, var(--green-bright) 14%, var(--bg-2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green-bright) 40%, transparent); }
+
+/* ---------- Scadenze delle righe: sfondo colorato in base alla vicinanza ---------- */
+/* colori scadenza (un solo posto da ritoccare) */
+:root {
+  --due-over: #e0604d;   /* scaduta */
+  --due-today: #f2762e;  /* oggi */
+  --due-soon: #f2a534;   /* entro 3 giorni */
+  --due-week: #e8cf4d;   /* entro 7 giorni */
+  --due-later: #4fb87a;  /* oltre */
+}
+.block.due-over  { background: color-mix(in srgb, var(--due-over) 18%, transparent); box-shadow: inset 3px 0 0 var(--due-over); }
+.block.due-today { background: color-mix(in srgb, var(--due-today) 17%, transparent); box-shadow: inset 3px 0 0 var(--due-today); }
+.block.due-soon  { background: color-mix(in srgb, var(--due-soon) 15%, transparent); box-shadow: inset 3px 0 0 var(--due-soon); }
+.block.due-week  { background: color-mix(in srgb, var(--due-week) 13%, transparent); box-shadow: inset 3px 0 0 var(--due-week); }
+.block.due-later { background: color-mix(in srgb, var(--due-later) 11%, transparent); box-shadow: inset 3px 0 0 var(--due-later); }
+/* mantiene l'evidenza selezione/ricerca anche con la scadenza */
+.block.due-over:hover, .block.due-today:hover, .block.due-soon:hover, .block.due-week:hover, .block.due-later:hover { filter: brightness(1.06); }
+
+/* etichetta countdown accanto alla riga */
+.due-badge {
+  flex: 0 0 auto; align-self: center; font-size: 11px; font-weight: 800; white-space: nowrap;
+  padding: 2px 8px; border-radius: 999px; cursor: pointer; user-select: none;
+  border: 1px solid transparent;
+}
+.due-badge.due-over  { color: #fff; background: var(--due-over); }
+.due-badge.due-today { color: #2a1405; background: var(--due-today); }
+.due-badge.due-soon  { color: #2a1e05; background: var(--due-soon); }
+.due-badge.due-week  { color: #23200a; background: var(--due-week); }
+.due-badge.due-later { color: #06160e; background: var(--due-later); }
+.due-badge.due-over  { animation: duePulse 1.6s ease-in-out infinite; }
+@keyframes duePulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--due-over) 60%, transparent); } 50% { box-shadow: 0 0 0 4px transparent; } }
+
+/* pulsante calendario per riga + popover con selettore data */
+.due-wrap { position: relative; flex: 0 0 auto; }
+.block .row-due { width: 28px; height: 28px; font-size: 13px; flex: 0 0 auto; opacity: .55; transition: opacity .12s, border-color .12s; }
+.block:hover .row-due { opacity: 1; }
+.block .row-due.has { opacity: 1; border-color: color-mix(in srgb, var(--green-deep) 55%, var(--border)); }
+.block .row-due.due-over  { border-color: var(--due-over); color: var(--due-over); }
+.block .row-due.due-today { border-color: var(--due-today); color: var(--due-today); }
+.block .row-due:hover { border-color: var(--green); }
+.due-scrim { position: fixed; inset: 0; z-index: 44; }
+.due-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 45; min-width: 200px;
+  display: flex; flex-direction: column; gap: 8px; padding: 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
+}
+.due-pop-lbl { font-size: 11px; color: var(--text-dim); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.due-input {
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+  font: inherit; font-size: 14px; padding: 8px 10px; outline: none; color-scheme: dark;
+}
+.due-input:focus { border-color: var(--green); }
+.due-pop-row { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ---------- Pipe: pulsante "fissa in cima" (pin) ---------- */
+.pin-btn { opacity: .5; transition: opacity .12s, color .12s, filter .12s; filter: grayscale(1); }
+.vista-card:hover .pin-btn { opacity: .9; }
+.pin-btn.on { opacity: 1; filter: none; border-color: var(--green-deep); }
+.vista-card.pinned { border-top: 2px solid var(--green-bright); }
+
+/* ---------- Feedback swipe: indicatore di direzione durante lo swipe ---------- */
+.swipe-hint {
+  position: fixed; top: 50%; transform: translateY(-50%); z-index: 70; pointer-events: none;
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+  background: var(--panel); border: 1px solid var(--border); box-shadow: var(--shadow);
+  color: var(--text-dim); max-width: 60vw;
+}
+.swipe-hint.left  { left: 0; border-left: none; border-radius: 0 14px 14px 0; flex-direction: row; }
+.swipe-hint.right { right: 0; border-right: none; border-radius: 14px 0 0 14px; flex-direction: row-reverse; }
+.swipe-hint-arrow { font-size: 22px; font-weight: 800; line-height: 1; color: var(--text-dim); }
+.swipe-hint-body { display: flex; flex-direction: column; min-width: 0; }
+.swipe-hint-kind { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; opacity: .8; }
+.swipe-hint-label { font-size: 13.5px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.swipe-hint.ready {
+  border-color: var(--green-bright); color: var(--green-bright);
+  background: color-mix(in srgb, var(--green-bright) 16%, var(--panel));
+}
+.swipe-hint.ready .swipe-hint-arrow { color: var(--green-bright); animation: swipeNudge .5s ease-in-out infinite; }
+@keyframes swipeNudge { 0%,100% { transform: translateX(0); } 50% { transform: translateX(3px); } }
+.swipe-hint.left.ready .swipe-hint-arrow { animation: swipeNudgeL .5s ease-in-out infinite; }
+@keyframes swipeNudgeL { 0%,100% { transform: translateX(0); } 50% { transform: translateX(-3px); } }
 
 /* ---------- Inserimento riga (＋ per riga, anche in mezzo) ---------- */
 .block .row-insert {

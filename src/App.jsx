@@ -27,6 +27,8 @@ export default function App() {
   const { user, loading, signOut, isDemo } = useAuth()
   const [tab, setTab] = useState('pipe')
   const [tabDir, setTabDir] = useState(0)      // -1 sx, +1 dx (per l'animazione swipe)
+  const [swipeHint, setSwipeHint] = useState(null)   // { scope, dir, ready, label } feedback live durante lo swipe
+  const swipeHintRef = useRef('')
   const [pipeQuery, setPipeQuery] = useState('')   // ricerca Pipe sollevata qui: sopravvive all'apertura di una vista.
   const [visioni, setVisioni] = useState([])
   const [viste, setViste] = useState([])
@@ -45,6 +47,7 @@ export default function App() {
   const [busy, setBusy] = useState('')
   const defaultVita = useRef(null)
   const stageWarned = useRef(false)
+  const pinWarned = useRef(false)
 
   const reload = useCallback(async () => {
     // resiliente: se una singola query fallisce non azzeriamo tutta l'app
@@ -93,6 +96,13 @@ export default function App() {
   const changeTab = (next, dir) => { setTabDir(dir); setTab(next) }
   const swipe = useRef(null)
   const editSwipe = useRef(null)   // swipe fra viste dentro l'editor
+  // aggiorna l'indicatore di swipe solo quando cambia davvero (evita re-render inutili)
+  const showSwipeHint = (h) => {
+    const sig = h ? `${h.scope}|${h.dir}|${h.ready ? 1 : 0}|${h.label}` : ''
+    if (sig === swipeHintRef.current) return
+    swipeHintRef.current = sig
+    setSwipeHint(h)
+  }
   const onTouchStart = (e) => {
     const t = e.touches[0]
     const noswipe = e.target.closest('[data-noswipe]')
@@ -100,8 +110,27 @@ export default function App() {
     if (noswipe?.dataset?.noswipe === 'scroll') scroller = noswipe
     swipe.current = { x: t.clientX, y: t.clientY, blocked: noswipe && !scroller, scroller, sl: scroller?.scrollLeft ?? 0 }
   }
+  // feedback live: mentre trascini in orizzontale mostra dove stai per andare
+  const onTouchMove = (e) => {
+    const s = swipe.current
+    if (!s || s.blocked || vistaAperta) return
+    const t = e.touches[0]
+    const dx = t.clientX - s.x, dy = t.clientY - s.y
+    if (Math.abs(dx) < 20 || Math.abs(dx) < Math.abs(dy)) { showSwipeHint(null); return }
+    if (s.scroller) {
+      const el = s.scroller
+      const atStart = el.scrollLeft <= 1
+      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1
+      if ((dx > 0 && !atStart) || (dx < 0 && !atEnd)) { showSwipeHint(null); return }
+    }
+    const idx = TABS.findIndex(x => x.id === tab)
+    const next = dx < 0 ? idx + 1 : idx - 1
+    if (next < 0 || next >= TABS.length) { showSwipeHint(null); return }
+    showSwipeHint({ scope: 'tab', dir: dx < 0 ? 1 : -1, ready: Math.abs(dx) >= 70 && Math.abs(dy) <= 60, label: TABS[next].label })
+  }
   const onTouchEnd = (e) => {
     const s = swipe.current; swipe.current = null
+    showSwipeHint(null)
     if (!s || s.blocked || vistaAperta) return
     const t = e.changedTouches[0]
     const dx = t.clientX - s.x, dy = t.clientY - s.y
@@ -232,9 +261,11 @@ export default function App() {
   const saveVista = async (updated) => {
     // 1) mirror SINCRONO in locale: sopravvive a refresh/chiusura anche se il cloud fallisce
     cacheVistaLocal(updated.id, { titolo: updated.titolo, blocchi: updated.blocchi, ...(updated.cestino !== undefined ? { cestino: updated.cestino } : {}) })
-    // 2) aggiornamento ottimistico della UI
-    setViste(vs => vs.map(v => v.id === updated.id ? { ...v, ...updated } : v))
-    setVistaAperta(va => (va && va.id === updated.id) ? { ...va, ...updated } : va)
+    // 2) aggiornamento ottimistico della UI (aggiorna anche updated_at così Pipe
+    //    riordina subito per modifica più recente, senza attendere il reload dal cloud)
+    const nowIso = new Date().toISOString()
+    setViste(vs => vs.map(v => v.id === updated.id ? { ...v, ...updated, updated_at: nowIso } : v))
+    setVistaAperta(va => (va && va.id === updated.id) ? { ...va, ...updated, updated_at: nowIso } : va)
     // 3) salvataggio cloud (best-effort, con fallback se la colonna cestino non esiste)
     const patch = { titolo: updated.titolo, blocchi: updated.blocchi }
     if (updated.cestino !== undefined && !cestinoDisabled()) patch.cestino = updated.cestino
@@ -259,6 +290,9 @@ export default function App() {
 
   const setStage = async (vistaId, stage) => {
     setViste(vs => vs.map(v => v.id === vistaId ? { ...v, stage } : v))
+    // aggiorna anche la vista aperta: senza questo, il pill della fase nella
+    // schermata di modifica restava con l'etichetta vecchia (sembrava "non funzionare").
+    setVistaAperta(va => (va && va.id === vistaId) ? { ...va, stage } : va)
     try {
       await store.update('viste', vistaId, { stage })
     } catch (e) {
@@ -275,6 +309,30 @@ export default function App() {
   const withLocalStages = (vs) => {
     const map = JSON.parse(localStorage.getItem('arbora-stages') || '{}')
     return vs.map(v => (v.stage == null && map[v.id]) ? { ...v, stage: map[v.id] } : v)
+  }
+
+  // ---- Pin: fissa una vista in cima alla sua visione (Pipe). Sincronizzato sul cloud
+  //      con la colonna `pinned`; se la colonna non esiste ancora, fallback su questo
+  //      dispositivo (localStorage) con avviso una tantum + script SQL da eseguire. ----
+  const setPinned = async (vistaId, pinned) => {
+    setViste(vs => vs.map(v => v.id === vistaId ? { ...v, pinned } : v))
+    setVistaAperta(va => (va && va.id === vistaId) ? { ...va, pinned } : va)
+    try {
+      await store.update('viste', vistaId, { pinned })
+    } catch (e) {
+      const map = JSON.parse(localStorage.getItem('arbora-pins') || '{}')
+      if (pinned) map[vistaId] = true; else delete map[vistaId]
+      localStorage.setItem('arbora-pins', JSON.stringify(map))
+      if (!pinWarned.current) {
+        pinWarned.current = true
+        alert('Per sincronizzare le viste fissate sul cloud esegui su Supabase:\nALTER TABLE public.viste ADD COLUMN IF NOT EXISTS pinned boolean DEFAULT false;\n(Nel frattempo i "fissati" sono salvati solo su questo dispositivo.)')
+      }
+    }
+  }
+
+  const withLocalPins = (vs) => {
+    const map = JSON.parse(localStorage.getItem('arbora-pins') || '{}')
+    return vs.map(v => (v.pinned == null && map[v.id]) ? { ...v, pinned: true } : v)
   }
 
   const openByName = async (name) => {
@@ -346,24 +404,36 @@ export default function App() {
   }
 
   // ---- swipe fra viste (dentro l'editor): passa alla vista prec/succ della stessa visione ----
-  const openAdjacentVista = (dir) => {
-    if (!vistaAperta) return
+  const adjacentVista = (dir) => {
+    if (!vistaAperta) return null
     const sibs = viste
       .filter(v => v.visione_id === vistaAperta.visione_id && !v.is_template)
       .sort((a, b) => (a.ordine || 0) - (b.ordine || 0))
     const i = sibs.findIndex(v => v.id === vistaAperta.id)
-    if (i === -1) return
+    if (i === -1) return null
     const j = i + dir
-    if (j < 0 || j >= sibs.length) return
-    setVistaAperta(sibs[j])
+    return (j >= 0 && j < sibs.length) ? sibs[j] : null
   }
+  const openAdjacentVista = (dir) => { const t = adjacentVista(dir); if (t) setVistaAperta(t) }
   const onEditorTouchStart = (e) => {
     if (e.touches.length !== 1 || e.target.closest('textarea, input, [data-noswipe]')) { editSwipe.current = null; return }
     const t = e.touches[0]
     editSwipe.current = { x: t.clientX, y: t.clientY }
   }
+  const onEditorTouchMove = (e) => {
+    const s = editSwipe.current
+    if (!s) { showSwipeHint(null); return }
+    const t = e.touches[0]
+    const dx = t.clientX - s.x, dy = t.clientY - s.y
+    if (Math.abs(dx) < 24 || Math.abs(dx) < Math.abs(dy) * 1.5) { showSwipeHint(null); return }
+    const dir = dx < 0 ? 1 : -1
+    const target = adjacentVista(dir)
+    if (!target) { showSwipeHint(null); return }
+    showSwipeHint({ scope: 'vista', dir, ready: Math.abs(dx) >= 80, label: target.titolo || 'Senza titolo' })
+  }
   const onEditorTouchEnd = (e) => {
     const s = editSwipe.current; editSwipe.current = null
+    showSwipeHint(null)
     if (!s) return
     const t = e.changedTouches[0]
     const dx = t.clientX - s.x, dy = t.clientY - s.y
@@ -371,7 +441,7 @@ export default function App() {
     openAdjacentVista(dx < 0 ? 1 : -1)   // swipe verso sinistra = vista successiva
   }
 
-  const visteConFasi = withLocalStages(viste)
+  const visteConFasi = withLocalPins(withLocalStages(viste))
   const pageTitles = { privacy: 'Privacy', terms: 'Termini e condizioni', profile: 'Profilo', stats: 'Statistiche' }
 
   // ---------- Pagine a schermo intero (profilo, statistiche, legali) ----------
@@ -404,9 +474,10 @@ export default function App() {
           <button className="iconbtn" title="Guida" onClick={() => setGuide('editor')}>?</button>
           <button className="iconbtn" title="Focus" onClick={() => setFocusMode(f => !f)}>{focusMode ? '🔅' : '🎯'}</button>
         </div>
-        <div className="content" onTouchStart={onEditorTouchStart} onTouchEnd={onEditorTouchEnd}>
-          <Editor vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} onSetStage={setStage} />
+        <div className="content" onTouchStart={onEditorTouchStart} onTouchMove={onEditorTouchMove} onTouchEnd={onEditorTouchEnd}>
+          <Editor key={vistaAperta.id} vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} onSetStage={setStage} />
         </div>
+        <SwipeHint hint={swipeHint} />
         {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
         {guide && <GuideModal section={guide} onClose={() => setGuide(null)} />}
       </div>
@@ -433,7 +504,7 @@ export default function App() {
         <button className="iconbtn" onClick={() => setMenu(true)}>☰</button>
       </div>
 
-      <div className="content" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <div className="content" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
         <div key={tab} className={'tab-pane ' + (tabDir < 0 ? 'from-left' : tabDir > 0 ? 'from-right' : '')}>
           {tab === 'pipe' && (
             <Pipeline visioni={visioni} viste={visteConFasi}
@@ -442,7 +513,8 @@ export default function App() {
               onAddVisione={addVisione} onAddVista={(visioneId) => addVista({ visioneId })}
               onRenameVisione={renameVisione} onRecolorVisione={recolorVisione}
               onDeleteVista={deleteVista} onDeleteVisione={deleteVisione}
-              onReorderVisioni={reorderVisioni} onMoveVistaToVisione={moveVistaToVisione} />
+              onReorderVisioni={reorderVisioni} onMoveVistaToVisione={moveVistaToVisione}
+              onTogglePin={(v) => setPinned(v.id, !v.pinned)} />
           )}
           {tab === 'tree' && (
             (visioni.length || viste.length)
@@ -471,6 +543,8 @@ export default function App() {
           onClick={() => setFabOpen(o => !o)}>＋</button>
       </div>
       {fabOpen && <div className="fab-scrim" onClick={() => setFabOpen(false)} />}
+
+      <SwipeHint hint={swipeHint} />
 
       {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
       {confirm && <ConfirmModal data={confirm} onClose={() => setConfirm(null)} />}
@@ -548,6 +622,22 @@ export default function App() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// Indicatore che appare durante lo swipe orizzontale: mostra dove si sta per andare
+// (sezione o vista adiacente) e si "accende" quando lo spostamento è sufficiente a cambiare.
+function SwipeHint({ hint }) {
+  if (!hint) return null
+  const right = hint.dir > 0
+  return (
+    <div className={'swipe-hint ' + (right ? 'right' : 'left') + (hint.ready ? ' ready' : '')}>
+      <span className="swipe-hint-arrow">{right ? '›' : '‹'}</span>
+      <span className="swipe-hint-body">
+        <span className="swipe-hint-kind">{hint.scope === 'vista' ? 'Vista' : 'Sezione'}</span>
+        <span className="swipe-hint-label">{hint.label}</span>
+      </span>
     </div>
   )
 }

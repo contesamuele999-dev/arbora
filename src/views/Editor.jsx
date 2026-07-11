@@ -21,6 +21,22 @@ function linkifyName(text, name) {
   return text.replace(re, (match) => '((' + match + '))')
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+// Info scadenza di una riga: classe di colore + etichetta countdown, dai giorni di distanza.
+// `due` è una stringa 'YYYY-MM-DD'. Confronto per giorni di calendario (mezzanotte).
+function dueInfo(due) {
+  if (!due) return null
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const d = new Date(due + 'T00:00:00'); if (isNaN(d.getTime())) return null
+  const days = Math.round((d.getTime() - today.getTime()) / DAY_MS)
+  if (days < 0)  return { cls: 'due-over',  days, label: days === -1 ? 'scaduta ieri' : `scaduta ${-days} g fa` }
+  if (days === 0) return { cls: 'due-today', days, label: 'scade oggi' }
+  if (days === 1) return { cls: 'due-soon',  days, label: 'scade domani' }
+  if (days <= 3)  return { cls: 'due-soon',  days, label: `tra ${days} g` }
+  if (days <= 7)  return { cls: 'due-week',  days, label: `tra ${days} g` }
+  return { cls: 'due-later', days, label: `tra ${days} g` }
+}
+
 const totalChars = (blocks) => (blocks || []).reduce((n, b) => n + (b.text?.length || 0), 0)
 const purgeTrash = (t) => (t || []).filter(x => x && x.deletedAt && Date.now() - x.deletedAt < SEVEN_DAYS)
 const relTime = (ts) => {
@@ -64,6 +80,8 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const [saveState, setSaveState] = useState('idle')   // idle | saving | saved | local
   const [clipCount, setClipCount] = useState(SECTION_CLIP.length)
   const [search, setSearch] = useState('')             // ricerca fra le righe DENTRO questa vista
+  const [duePick, setDuePick] = useState(null)         // id della riga di cui si sta impostando la scadenza
+  const [, setTick] = useState(0)                      // ri-valuta le scadenze nel tempo (senza interazione)
   const undoStack = useRef([])
   const redoStack = useRef([])
   const saveTimer = useRef(null)
@@ -75,6 +93,15 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const rootRef = useRef(null)           // contenitore della vista: riceve il focus all'apertura
 
   useEffect(() => { if (editing) lastEdit.current = editing }, [editing])
+
+  // aggiorna periodicamente i colori/etichette delle scadenze (una volta al minuto)
+  useEffect(() => { const t = setInterval(() => setTick(n => n + 1), 60000); return () => clearInterval(t) }, [])
+
+  // imposta o rimuove la scadenza di una riga ('' = rimuovi)
+  const setDue = (id, due) => {
+    const next = blocks.map(b => b.id === id ? { ...b, due: due || undefined } : b)
+    commit(next)
+  }
 
   // Fallback per Safari e browser che non generano l'evento "paste" senza
   // un'interazione precedente: porta il focus sul contenitore appena si apre
@@ -197,6 +224,23 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         if (tag === 'INPUT' || tag === 'TEXTAREA') return   // lascia fare il taglio nativo dentro un campo
         e.preventDefault()
         cutSection()
+      }
+      // ---- scorciatoie in MODALITÀ SELEZIONE (solo fuori dai campi di testo) ----
+      else if (selectMode && e.key === 'Escape') {
+        e.preventDefault()
+        exitSelect()   // Esc = esci dalla selezione
+      }
+      else if (selectMode && (e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+        const tag = document.activeElement?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return
+        e.preventDefault()
+        selectAll()    // Ctrl+A = seleziona tutte le righe
+      }
+      else if (selectMode && selected.size && e.key === 'Tab') {
+        const tag = document.activeElement?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return
+        e.preventDefault()
+        indentSelected(e.shiftKey ? -1 : 1)   // Tab = indenta · Shift+Tab = de-indenta
       }
     }
     window.addEventListener('keydown', h)
@@ -328,7 +372,23 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const tapRef = useRef({ id: null, n: 0, t: null })
   const activateBlock = (b) => {
     if (rowJustHandled.current) { rowJustHandled.current = false; return }  // veniamo da un drag/swipe della riga
-    if (selectMode) { toggleSelect(b.id); return }
+    if (selectMode) {
+      // triplo tocco = esci dalla selezione (comodo su telefono/tablet, dove la barra
+      // con la ✕ può essere fuori schermo). I primi due tap si annullano a vicenda.
+      const tr = tapRef.current
+      if (tr.id !== b.id) { tr.id = b.id; tr.n = 0 }
+      tr.n++
+      clearTimeout(tr.t)
+      if (tr.n >= 3) {
+        tr.n = 0; tr.id = null
+        exitSelect()
+        try { navigator.vibrate?.(12) } catch { /* ignore */ }
+        return
+      }
+      tr.t = setTimeout(() => { tr.id = null; tr.n = 0 }, 480)
+      toggleSelect(b.id)
+      return
+    }
     // conteggio tap ravvicinati sulla stessa riga: 3 = attiva la selezione
     const tr = tapRef.current
     if (tr.id !== b.id) { tr.id = b.id; tr.n = 0 }
@@ -613,6 +673,27 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     requestAnimationFrame(() => { try { el.focus(); el.selectionStart = ns; el.selectionEnd = ne } catch {} })
   }
 
+  // ---- MAIUSCOLO: trasforma in maiuscolo il testo selezionato nella riga in modifica;
+  //      se non c'è selezione, mette in maiuscolo l'intera riga attiva. ----
+  const upperActive = () => {
+    const el = document.activeElement
+    if (editing && el && el.tagName === 'TEXTAREA') {
+      const s = el.selectionStart, e = el.selectionEnd, val = el.value
+      if (s !== e) {
+        const nv = val.slice(0, s) + val.slice(s, e).toUpperCase() + val.slice(e)
+        setText(editing, nv)
+        requestAnimationFrame(() => { try { el.focus(); el.selectionStart = s; el.selectionEnd = e } catch {} })
+        return
+      }
+      setText(editing, val.toUpperCase())
+      return
+    }
+    const id = editing || lastEdit.current
+    if (!id) return
+    const b = blocks.find(x => x.id === id)
+    if (b) setText(id, (b.text || '').toUpperCase())
+  }
+
   // ---- suggerimento collegamenti: se scrivi il nome di un'altra vista ----
   const editingText = blocks.find(b => b.id === editing)?.text || ''
   const suggestions = useMemo(() => {
@@ -700,7 +781,8 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
             <li><b>＋</b> nuova riga (anche in mezzo) · <b>⌫</b> svuota · <b>🗑</b> elimina (7 gg)</li>
             <li><b>Invio</b> nuova riga · <b>Tab</b>/<b>⇤⇥</b> nidifica · trascina ←/→</li>
             <li><code>Ctrl+B</code> grassetto · <code>Ctrl+I</code> corsivo · <code>Ctrl+Z</code>/<code>Ctrl+Y</code> annulla/ripeti</li>
-            <li><b>☑ Seleziona</b> → <code>Ctrl+C</code> copia · <code>Ctrl+X</code> taglia · <b>📌</b> incolla</li>
+            <li><b>☑ Seleziona</b> → <code>Ctrl+C</code>/<code>Ctrl+X</code> · <code>Ctrl+A</code> tutte · <code>Tab</code>/<code>⇧Tab</code> rientro · <code>Esc</code>/triplo tocco esci</li>
+            <li><b>📅</b> scadenza riga (sfondo colorato + countdown) · <b>AA</b> MAIUSCOLO</li>
             <li><b>🔍</b> cerca nella vista · <b>🔗</b> collega vista · swipe ←/→ cambia vista</li>
           </ul>
         </div>
@@ -710,7 +792,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           <button className="iconbtn" title="Titolo" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, '# ' + (blocks.find(b=>b.id===id)?.text||'')) }}>H</button>
           <button className="iconbtn" title="Grassetto (Ctrl+B)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '**testo**') }}><b>B</b></button>
           <button className="iconbtn" title="Corsivo (Ctrl+I)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '*testo*') }}><i>c</i></button>
-          <button className="iconbtn" title="Maiuscoletto (^^testo^^)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '^^testo^^') }}><span className="smallcaps" style={{fontSize:'12px'}}>Ab</span></button>
+          <button className="iconbtn" title="MAIUSCOLO — trasforma in maiuscolo il testo selezionato (o l'intera riga)" onClick={upperActive}><span style={{fontSize:'12px',fontWeight:800,letterSpacing:'.5px'}}>AA</span></button>
           <button className="iconbtn" title="Rientra (nidifica)" onClick={() => { const id = editing || lastEdit.current; if (!id) return; const i = blocks.findIndex(b=>b.id===id); setIndent(id, Math.min(maxIndentFor(blocks, i), (blocks[i].indent||0)+1)) }}>⇥</button>
           <button className="iconbtn" title="Riduci rientro" onClick={() => { const id = editing || lastEdit.current; if (!id) return; const b = blocks.find(x=>x.id===id); setIndent(id, Math.max(0,(b.indent||0)-1)) }}>⇤</button>
           <button className="iconbtn" title="Sezione / divisore" onClick={() => addBlock(editing || lastEdit.current, '---')}>—</button>
@@ -793,9 +875,10 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         const indent = b.indent || 0
         const isSel = selected.has(b.id)
         const isHit = matchSet ? matchSet.has(b.id) : false
+        const di = b.due ? dueInfo(b.due) : null
         return (
         <div key={b.id} data-block-id={b.id} data-noswipe=""
-          className={'block' + (dragId === b.id ? ' dragging' : '') + (dropId === b.id ? ' drop-target' : '') + (indent ? ' nested' : '') + (isSel ? ' selected' : '') + (matchSet && !isHit ? ' search-dim' : '') + (isHit ? ' search-hit' : '')}
+          className={'block' + (dragId === b.id ? ' dragging' : '') + (dropId === b.id ? ' drop-target' : '') + (indent ? ' nested' : '') + (isSel ? ' selected' : '') + (matchSet && !isHit ? ' search-dim' : '') + (isHit ? ' search-hit' : '') + (di ? ' ' + di.cls : '')}
           draggable={editing !== b.id && !selectMode}
           onDragStart={e => onDragStart(e, b.id)}
           onDragOver={e => onDragOver(e, b.id)}
@@ -847,7 +930,32 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
               {b.text ? <RenderedBlock text={b.text} onWikilink={onWikilink} /> : <span style={{color:'var(--text-dim)'}}>Vuoto — clicca per scrivere</span>}
             </div>
           )}
+          {di && (
+            <span className={'due-badge ' + di.cls} title={'Scadenza: ' + b.due}
+              onClick={() => { if (!selectMode) setDuePick(p => p === b.id ? null : b.id) }}>⏰ {di.label}</span>
+          )}
           <span className={'copytap' + (flash === b.id ? ' copied-flash' : '')}>{flash === b.id ? 'copiato!' : ''}</span>
+          {!selectMode && (
+            <div className="due-wrap" data-noswipe="">
+              <button className={'iconbtn row-due' + (b.due ? ' has' : '') + (di ? ' ' + di.cls : '')}
+                title={b.due ? 'Scadenza: ' + b.due + ' — clicca per modificare' : 'Imposta una scadenza per questa riga'}
+                onClick={() => setDuePick(p => p === b.id ? null : b.id)}>📅</button>
+              {duePick === b.id && (
+                <>
+                  <div className="due-scrim" onClick={() => setDuePick(null)} />
+                  <div className="due-pop" onClick={e => e.stopPropagation()}>
+                    <label className="due-pop-lbl">Scadenza</label>
+                    <input type="date" className="due-input" value={b.due || ''}
+                      onChange={e => setDue(b.id, e.target.value)} />
+                    <div className="due-pop-row">
+                      {b.due && <button className="pillbtn danger" onClick={() => { setDue(b.id, ''); setDuePick(null) }}>Rimuovi</button>}
+                      <button className="pillbtn" onClick={() => setDuePick(null)}>Fatto</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           {!selectMode && b.text && (
             <button className="iconbtn row-clear" title="Svuota il contenuto della riga"
               onClick={() => clearBlock(b.id)}>⌫</button>

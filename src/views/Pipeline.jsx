@@ -6,7 +6,7 @@ import { stageOf } from '../lib/stages.js'
 // e viste (card neutre con indicatore colore della fase).
 // Ricerca: priorità ai titoli delle viste, poi al contenuto.
 // ============================================================
-export default function Pipeline({ visioni, viste, query: queryProp, onQueryChange, onOpen, onPreview, onAddVisione, onAddVista, onRenameVisione, onRecolorVisione, onDeleteVista, onDeleteVisione, onReorderVisioni, onMoveVistaToVisione }) {
+export default function Pipeline({ visioni, viste, query: queryProp, onQueryChange, onOpen, onPreview, onAddVisione, onAddVista, onRenameVisione, onRecolorVisione, onDeleteVista, onDeleteVisione, onReorderVisioni, onMoveVistaToVisione, onTogglePin }) {
   // la ricerca è controllata dall'alto (App) così non si azzera aprendo/chiudendo una vista;
   // fallback a stato locale se il componente viene usato senza le prop.
   const [queryLocal, setQueryLocal] = useState('')
@@ -28,14 +28,25 @@ export default function Pipeline({ visioni, viste, query: queryProp, onQueryChan
     return content.includes(q) ? 1 : 0
   }
 
-  // per ogni visione: viste filtrate e ordinate (titolo prima del contenuto)
+  // ordinamento di default (nessuna ricerca): viste fissate in cima, poi per modifica
+  // più recente (updated_at, fallback created_at).
+  const modTs = (v) => Date.parse(v.updated_at || v.created_at || 0) || 0
+  const byPinnedRecent = (a, b) => {
+    const pa = a.pinned ? 1 : 0, pb = b.pinned ? 1 : 0
+    if (pa !== pb) return pb - pa
+    return modTs(b) - modTs(a)
+  }
+
+  // per ogni visione: viste filtrate e ordinate.
+  // Senza ricerca: fissate in cima, poi più recenti. Con ricerca: prima il punteggio
+  // (titolo > contenuto), poi a parità le fissate/più recenti.
   const sezioni = useMemo(() => {
     let out = visioni.map(vis => {
       const mie = viste.filter(v => v.visione_id === vis.id)
       const visMatch = q && (vis.titolo || '').toLowerCase().includes(q)
       let list = mie.map(v => ({ v, s: scoreVista(v) }))
       if (q) list = list.filter(x => x.s > 0 || visMatch)
-      list.sort((a, b) => b.s - a.s)
+      list.sort((a, b) => (b.s - a.s) || byPinnedRecent(a.v, b.v))
       return { vis, mie, list, visMatch, total: mie.length }
     }).filter(sez => !q || sez.list.length > 0 || sez.visMatch)
     if (q) {
@@ -132,7 +143,7 @@ export default function Pipeline({ visioni, viste, query: queryProp, onQueryChan
             {list.map(({ v }) => {
               const st = stageOf(v)
               return (
-                <article key={v.id} className={'vista-card' + (dragVistaId === v.id ? ' dragging' : '')} style={{ '--stage': st.color }}
+                <article key={v.id} className={'vista-card' + (dragVistaId === v.id ? ' dragging' : '') + (v.pinned ? ' pinned' : '')} style={{ '--stage': st.color }}
                   draggable title="Trascina su un'altra visione per spostarla"
                   onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragVistaId(v.id) }}
                   onDragEnd={() => { setDragVistaId(null); setOverVisId(null) }}
@@ -140,6 +151,9 @@ export default function Pipeline({ visioni, viste, query: queryProp, onQueryChan
                   <div className="vista-top">
                     <span className="stage-dot" title={st.label} />
                     <h4>{v.titolo || 'Senza titolo'}</h4>
+                    <button className={'iconbtn mini pin-btn' + (v.pinned ? ' on' : '')}
+                      title={v.pinned ? 'Rimuovi da fissate' : 'Fissa in cima alla visione'}
+                      onClick={e => { e.stopPropagation(); onTogglePin?.(v) }}>📌</button>
                     <button className="iconbtn mini" title="Anteprima"
                       onClick={e => { e.stopPropagation(); onPreview(v) }}>👁</button>
                     <button className="iconbtn mini danger" title="Elimina vista"
