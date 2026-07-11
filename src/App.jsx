@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useAuth } from './lib/auth.jsx'
 import { store } from './lib/store.js'
 import Auth from './pages/Auth.jsx'
@@ -469,8 +469,8 @@ export default function App() {
       <div className="app">
         <div className="topbar">
           <button className="iconbtn" onClick={() => setVistaAperta(null)}>←</button>
-          <div className="brand"><span>{visioni.find(v => v.id === vistaAperta.visione_id)?.titolo}</span></div>
-          <div className="spacer" />
+          <div className="brand editor-brand"><span>{visioni.find(v => v.id === vistaAperta.visione_id)?.titolo}</span></div>
+          <EditorVistaSearch viste={viste} visioni={visioni} current={vistaAperta} onOpen={setVistaAperta} />
           <button className="iconbtn" title="Guida" onClick={() => setGuide('editor')}>?</button>
           <button className="iconbtn" title="Focus" onClick={() => setFocusMode(f => !f)}>{focusMode ? '🔅' : '🎯'}</button>
         </div>
@@ -620,6 +620,68 @@ export default function App() {
               Arbora © {new Date().getFullYear()} — Sviluppata da <b>Samuele Contessa</b>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Barra di ricerca nell'header dell'editor: salta rapidamente a un'altra vista.
+// Priorità ai match nel titolo, poi nel contenuto. Enter apre il primo risultato.
+function EditorVistaSearch({ viste, visioni, current, onOpen }) {
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const [hi, setHi] = useState(0)
+  const boxRef = useRef(null)
+  const visName = (id) => visioni.find(v => v.id === id)?.titolo || ''
+  const s = q.trim().toLowerCase()
+  const results = useMemo(() => {
+    if (!s) return []
+    const scored = []
+    for (const v of viste) {
+      if (v.is_template) continue
+      const title = (v.titolo || '').toLowerCase()
+      let sc = 0
+      if (title.includes(s)) sc = 2
+      else if ((v.blocchi || []).some(b => (b.text || '').toLowerCase().includes(s))) sc = 1
+      if (sc) scored.push({ v, sc, same: v.visione_id === current?.visione_id })
+    }
+    scored.sort((a, b) => b.sc - a.sc || (b.same ? 1 : 0) - (a.same ? 1 : 0) || (a.v.titolo || '').localeCompare(b.v.titolo || ''))
+    return scored.slice(0, 8)
+  }, [s, viste, current])
+
+  useEffect(() => {
+    const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('pointerdown', onDoc)
+    return () => document.removeEventListener('pointerdown', onDoc)
+  }, [])
+  useEffect(() => { setHi(0) }, [s])
+
+  const pick = (v) => { if (!v) return; onOpen(v); setQ(''); setOpen(false) }
+  const onKey = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHi(h => Math.min(results.length - 1, h + 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => Math.max(0, h - 1)) }
+    else if (e.key === 'Enter') { e.preventDefault(); pick(results[hi]) }
+    else if (e.key === 'Escape') { setQ(''); setOpen(false); e.currentTarget.blur() }
+  }
+
+  return (
+    <div className="editor-nav" ref={boxRef} data-noswipe="">
+      <span className="editor-nav-ico">🔍</span>
+      <input className="editor-nav-input" value={q} placeholder="Vai a una vista…"
+        onChange={e => { setQ(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)} onKeyDown={onKey} />
+      {q && <button className="editor-nav-clear" title="Pulisci" onClick={() => { setQ(''); setOpen(false) }}>✕</button>}
+      {open && s && (
+        <div className="editor-nav-menu">
+          {results.length === 0 && <div className="editor-nav-empty">Nessuna vista trovata.</div>}
+          {results.map((r, i) => (
+            <button key={r.v.id} className={'editor-nav-item' + (i === hi ? ' hi' : '')}
+              onMouseEnter={() => setHi(i)} onClick={() => pick(r.v)}>
+              <span className="editor-nav-title">{r.v.titolo || 'Senza titolo'}</span>
+              <span className="editor-nav-vis">{visName(r.v.visione_id)}{r.sc === 1 ? ' · nel testo' : ''}</span>
+            </button>
+          ))}
         </div>
       )}
     </div>

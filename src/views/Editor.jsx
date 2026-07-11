@@ -213,6 +213,12 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     const h = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo() }
+      // Ctrl+S = entra/esci dalla modalità selezione (blocca il "salva pagina" del browser)
+      else if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault()
+        if (selectMode) exitSelect()
+        else { setSelectMode(true); setEditing(null) }
+      }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && selectMode && selected.size) {
         const tag = document.activeElement?.tagName
         if (tag === 'INPUT' || tag === 'TEXTAREA') return   // lascia fare la copia nativa dentro un campo
@@ -241,6 +247,13 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         if (tag === 'INPUT' || tag === 'TEXTAREA') return
         e.preventDefault()
         indentSelected(e.shiftKey ? -1 : 1)   // Tab = indenta · Shift+Tab = de-indenta
+      }
+      // Invio senza nulla in modifica/selezione → aggiungi una riga in fondo alla vista
+      else if (e.key === 'Enter' && !e.shiftKey && !selectMode && !editing) {
+        const tag = document.activeElement?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return
+        e.preventDefault()
+        addBlock(null)
       }
     }
     window.addEventListener('keydown', h)
