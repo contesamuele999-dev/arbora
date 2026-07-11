@@ -1037,7 +1037,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         const di = b.due ? dueInfo(b.due) : null
         return (
         <div key={b.id} data-block-id={b.id} data-noswipe=""
-          className={'block' + (dragId === b.id ? ' dragging' : '') + (dropId === b.id ? ' drop-target' : '') + (indent ? ' nested' : '') + (isSel ? ' selected' : '') + (matchSet && !isHit ? ' search-dim' : '') + (isHit ? ' search-hit' : '') + (di ? ' ' + di.cls : '')}
+          className={'block' + (dragId === b.id ? ' dragging' : '') + (dropId === b.id ? ' drop-target' : '') + (indent ? ' nested' : '') + (isSel ? ' selected' : '') + (editing === b.id ? ' editing' : '') + (matchSet && !isHit ? ' search-dim' : '') + (isHit ? ' search-hit' : '') + (di ? ' ' + di.cls : '')}
           draggable={editing !== b.id && !selectMode}
           onDragStart={e => onDragStart(e, b.id)}
           onDragOver={e => onDragOver(e, b.id)}
