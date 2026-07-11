@@ -1,5 +1,24 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { stageOf } from '../lib/stages.js'
+
+// Classe di urgenza di una vista in base alle scadenze delle sue righe:
+// evidenzia con lo sfondo se ha righe scadute / in scadenza oggi / entro 3 giorni.
+const DAY_MS = 24 * 60 * 60 * 1000
+function urgentCls(v) {
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  let best = null
+  for (const b of (v.blocchi || [])) {
+    if (!b.due) continue
+    const d = new Date(b.due + 'T00:00:00'); if (isNaN(d.getTime())) continue
+    const days = Math.round((d.getTime() - today.getTime()) / DAY_MS)
+    if (best === null || days < best) best = days
+  }
+  if (best === null) return ''
+  if (best < 0) return ' due-over'
+  if (best === 0) return ' due-today'
+  if (best <= 3) return ' due-soon'
+  return ''
+}
 
 // ============================================================
 // PIPE — visioni (contenitori, sfondo tinto col loro colore)
@@ -61,6 +80,30 @@ export default function Pipeline({ visioni, viste, query: queryProp, onQueryChan
 
   const nResults = sezioni.reduce((n, s) => n + s.list.length, 0)
 
+  // prima vista fra i risultati (per aprirla con Invio dalla barra di ricerca)
+  const firstResult = useMemo(() => {
+    for (const s of sezioni) { if (s.list.length) return s.list[0].v }
+    return null
+  }, [sezioni])
+
+  // digitando da tastiera (fuori dai campi) il testo va nella barra di ricerca
+  const searchRef = useRef(null)
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = document.activeElement?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key.length === 1) {
+        setQuery(query + e.key)   // append al testo corrente
+        requestAnimationFrame(() => searchRef.current?.focus())
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query])
+
   return (
     <div className="pipe">
       <div className="section-head">
@@ -72,7 +115,11 @@ export default function Pipeline({ visioni, viste, query: queryProp, onQueryChan
 
       <div className="pipe-search">
         <span className="pipe-search-ico">🔍</span>
-        <input className="pipe-search-input" value={query} onChange={e => setQuery(e.target.value)}
+        <input className="pipe-search-input" ref={searchRef} value={query} onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && firstResult) { e.preventDefault(); onOpen(firstResult) }
+            else if (e.key === 'Escape') { if (query) setQuery(''); else e.currentTarget.blur() }
+          }}
           placeholder="Cerca viste (titolo, poi contenuto)…" />
         {query && <button className="pipe-search-clear" title="Pulisci" onClick={() => setQuery('')}>✕</button>}
       </div>
@@ -143,7 +190,7 @@ export default function Pipeline({ visioni, viste, query: queryProp, onQueryChan
             {list.map(({ v }) => {
               const st = stageOf(v)
               return (
-                <article key={v.id} className={'vista-card' + (dragVistaId === v.id ? ' dragging' : '') + (v.pinned ? ' pinned' : '')} style={{ '--stage': st.color }}
+                <article key={v.id} className={'vista-card' + (dragVistaId === v.id ? ' dragging' : '') + (v.pinned ? ' pinned' : '') + urgentCls(v)} style={{ '--stage': st.color }}
                   draggable title="Trascina su un'altra visione per spostarla"
                   onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragVistaId(v.id) }}
                   onDragEnd={() => { setDragVistaId(null); setOverVisId(null) }}

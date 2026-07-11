@@ -247,20 +247,25 @@ a { color: var(--accent); text-decoration: none; }
   font-weight: 800; outline: none;
 }
 .save-state {
-  /* In basso a destra: così non copre più i pulsanti dei modificatori di testo
-     (toolbar sticky) durante lo scroll, né resta incollato alla linea dell'header. */
-  position: fixed; bottom: 18px; right: 16px; top: auto; z-index: 40;
-  flex: 0 0 auto; font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+  /* Nell'header, in alto a destra: resta ancorato in cima con lo scroll (fa parte del
+     gruppo .editor-sticky) e su mobile non finisce più coperto dalla tastiera. */
+  margin-left: auto; align-self: center; flex: 0 0 auto;
+  font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
   border: 1px solid var(--border); white-space: nowrap; transition: opacity .2s; opacity: .95;
-  background: var(--panel); box-shadow: 0 4px 12px rgba(0,0,0,.28); backdrop-filter: blur(4px);
-  pointer-events: none;
+  background: var(--panel);
 }
 .save-state.idle { opacity: 0; }
 .save-state.saving { color: var(--text-dim); }
 .save-state.saved { color: var(--green-bright); border-color: var(--green-deep); background: color-mix(in srgb, var(--green-bright) 10%, transparent); }
 .save-state.local { color: #e0b64d; border-color: #7a5c1f; background: rgba(224,182,77,.08); }
+
+/* gruppo ancorato in alto durante lo scroll: titolo + fase + salvataggio + barre strumenti */
+.editor-sticky {
+  position: sticky; top: 0; z-index: 26;
+  background: var(--bg); padding-top: 8px; margin-top: -8px;
+}
 .toolbar {
-  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; position: sticky; top: 8px; z-index: 25;
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; z-index: 25;
   background: var(--bg); padding: 6px 4px; border-radius: 12px;
   box-shadow: 0 4px 10px rgba(0,0,0,.25);
 }
@@ -488,6 +493,36 @@ a { color: var(--accent); text-decoration: none; }
 .pin-btn.on { opacity: 1; filter: none; border-color: var(--green-deep); }
 .vista-card.pinned { border-top: 2px solid var(--green-bright); }
 
+/* Pipe: card evidenziate se hanno righe con scadenza imminente */
+.vista-card.due-over  { background: color-mix(in srgb, var(--due-over) 15%, var(--panel)); border-color: color-mix(in srgb, var(--due-over) 45%, var(--border)); }
+.vista-card.due-today { background: color-mix(in srgb, var(--due-today) 16%, var(--panel)); border-color: color-mix(in srgb, var(--due-today) 45%, var(--border)); }
+.vista-card.due-soon  { background: color-mix(in srgb, var(--due-soon) 12%, var(--panel)); }
+.vista-card.due-over  h4::after  { content: ' ⏰'; }
+.vista-card.due-today h4::after  { content: ' ⏰'; }
+
+/* ---------- Allegati immagine alle righe ---------- */
+.block .row-img { width: 28px; height: 28px; font-size: 14px; flex: 0 0 auto; opacity: .55; transition: opacity .12s, border-color .12s; }
+.block:hover .row-img { opacity: 1; }
+.block .row-img:hover { opacity: 1; border-color: var(--green); }
+.row-thumbs { display: flex; flex-wrap: wrap; gap: 6px; flex: 0 0 auto; align-self: center; max-width: 40%; }
+.row-thumb {
+  width: 46px; height: 46px; border-radius: 8px; border: 1px solid var(--border);
+  background-size: cover; background-position: center; cursor: pointer; padding: 0;
+  transition: border-color .12s, transform .12s;
+}
+.row-thumb:hover { border-color: var(--green-bright); transform: scale(1.04); }
+.img-lightbox {
+  position: fixed; inset: 0; z-index: 95; background: rgba(0,0,0,.85);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 20px;
+  animation: trashIn .12s ease;
+}
+.img-lightbox img { max-width: 94vw; max-height: 80vh; border-radius: 12px; box-shadow: var(--shadow); object-fit: contain; }
+.img-lightbox-bar { display: flex; gap: 10px; }
+
+/* popup scadenza centrato per le righe selezionate (Ctrl+D) */
+.due-scrim-center { display: grid; place-items: center; z-index: 90; background: rgba(0,0,0,.45); }
+.due-pop-center { position: static; min-width: 240px; }
+
 /* ---------- Feedback swipe: indicatore di direzione durante lo swipe ---------- */
 .swipe-hint {
   position: fixed; top: 50%; transform: translateY(-50%); z-index: 70; pointer-events: none;
@@ -578,8 +613,15 @@ a { color: var(--accent); text-decoration: none; }
      pulsanti azione sempre visibili (niente hover sul touch). */
   .editor-head { padding-right: 0; }
   .block textarea { min-height: 3.2em; font-size: 16px; padding: 10px 12px; }
-  .block .row-insert, .block .row-clear, .block .row-del { opacity: 1; }
+  .block .row-insert, .block .row-clear, .block .row-del, .block .row-img, .block .row-due { opacity: 1; }
   .block .row-insert { width: 32px; height: 32px; }
+  /* Su telefono il trascinamento avviene tenendo premuta la riga: la maniglia ⠿
+     è superflua e affollava soltanto la riga → la nascondiamo. */
+  .block { gap: 6px; padding: 6px 6px; }
+  .block > .handle { display: none; }
+  .row-thumb { width: 40px; height: 40px; }
+  /* barra strumenti un filo più compatta per stare in una riga */
+  .toolbar .iconbtn { width: 32px; height: 32px; }
 }
 
 @media (max-width: 380px) {
@@ -652,8 +694,8 @@ a { color: var(--accent); text-decoration: none; }
 }
 .sel-box.on { border-color: var(--green-bright); background: color-mix(in srgb, var(--green-bright) 20%, var(--bg-2)); }
 
-/* seconda barra strumenti (azioni sui blocchi): sticky subito sotto la prima, non sopra */
-.toolbar-2 { margin-top: -6px; margin-bottom: 14px; align-items: center; top: 54px; z-index: 24; }
+/* seconda barra strumenti (azioni sui blocchi): dentro al gruppo ancorato .editor-sticky */
+.toolbar-2 { margin-top: -2px; margin-bottom: 8px; align-items: center; z-index: 24; }
 .pillbtn {
   display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px;
   background: var(--panel); border: 1px solid var(--border); color: var(--text); font-size: 12.5px; font-weight: 600; transition: .15s;

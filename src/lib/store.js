@@ -97,4 +97,24 @@ export const store = {
     db[table] = (db[table] || []).filter(r => r.id !== id)
     saveLocal(db)
   },
+
+  // ---------- Allegati immagine (Supabase Storage) ----------
+  // Carica un blob immagine nel bucket 'vista-immagini' sotto la cartella dell'utente
+  // e ritorna { url, path }. In modalità demo non viene chiamata (si usa base64).
+  async uploadImage(blob, vistaId) {
+    if (!hasSupabase) throw new Error('Storage non disponibile in modalità demo')
+    const { data: { user } } = await supabase.auth.getUser()
+    const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`
+    const path = `${user.id}/${vistaId}/${name}`
+    const { error } = await supabase.storage.from('vista-immagini')
+      .upload(path, blob, { contentType: 'image/jpeg', upsert: false })
+    if (error) throw error
+    const { data } = supabase.storage.from('vista-immagini').getPublicUrl(path)
+    return { url: data.publicUrl, path }
+  },
+
+  async removeImage(path) {
+    if (!hasSupabase || !path) return
+    await supabase.storage.from('vista-immagini').remove([path])
+  },
 }

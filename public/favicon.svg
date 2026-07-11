@@ -4,45 +4,39 @@
       <stop offset="0" stop-color="#15351f"/>
       <stop offset="1" stop-color="#0e1512"/>
     </linearGradient>
+    <radialGradient id="node" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#2b6b45"/>
+      <stop offset="1" stop-color="#123021"/>
+    </radialGradient>
+    <radialGradient id="nodeRoot" cx="0.35" cy="0.3" r="0.85">
+      <stop offset="0" stop-color="#3ec47b"/>
+      <stop offset="1" stop-color="#1c7a4c"/>
+    </radialGradient>
   </defs>
+
   <rect width="512" height="512" rx="116" fill="url(#bg)"/>
 
-  <!-- connettori a gomito, come nel Tree dell'app -->
-  <g fill="none" stroke="#3ec47b" stroke-width="5" stroke-linecap="round" opacity="0.85">
-    <path d="M104 172 L104 210 Q104 220 114 220 L192 220"/>
-    <path d="M220 244 L220 275 Q220 285 230 285 L290 285"/>
-    <path d="M104 172 L104 344 Q104 354 114 354 L192 354"/>
+  <!-- connettori a gomito, stile albero (come nel Tree dell'app) -->
+  <g fill="none" stroke="#3ec47b" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
+    <path d="M150 182 V236 Q150 248 162 248 H244"/>
+    <path d="M150 182 V346 Q150 358 162 358 H244"/>
+    <path d="M296 248 V300 Q296 312 308 312 H360"/>
   </g>
 
-  <!-- nodo radice (visione) -->
-  <g>
-    <rect x="82" y="122" width="152" height="50" rx="14" fill="#17402a" stroke="#2e9e63" stroke-width="3"/>
-    <circle cx="104" cy="147" r="8" fill="#4ae08c"/>
-    <rect x="122" y="138" width="94" height="8" rx="4" fill="#eafff3" opacity="0.9"/>
-    <rect x="122" y="153" width="66" height="6" rx="3" fill="#bfe6d0" opacity="0.55"/>
-  </g>
+  <!-- nodi = cerchi -->
+  <!-- radice (visione) -->
+  <circle cx="150" cy="182" r="40" fill="url(#nodeRoot)" stroke="#5fe39c" stroke-width="5"/>
+  <circle cx="150" cy="182" r="15" fill="#eafff3"/>
 
   <!-- figlio A -->
-  <g>
-    <rect x="190" y="198" width="150" height="46" rx="13" fill="#143524" stroke="#2e9e63" stroke-width="3"/>
-    <circle cx="211" cy="221" r="7" fill="#58c4ff"/>
-    <rect x="228" y="213" width="86" height="7" rx="3" fill="#eafff3" opacity="0.85"/>
-    <rect x="228" y="226" width="58" height="6" rx="3" fill="#bfe6d0" opacity="0.5"/>
-  </g>
+  <circle cx="270" cy="248" r="30" fill="url(#node)" stroke="#34d27e" stroke-width="5"/>
+  <circle cx="270" cy="248" r="10" fill="#58c4ff"/>
 
-  <!-- nipote A1 (livello più profondo) -->
-  <g>
-    <rect x="288" y="263" width="134" height="44" rx="12" fill="#122f20" stroke="#2e9e63" stroke-width="3"/>
-    <circle cx="308" cy="285" r="7" fill="#ffc24d"/>
-    <rect x="325" y="278" width="72" height="7" rx="3" fill="#eafff3" opacity="0.82"/>
-    <rect x="325" y="290" width="46" height="6" rx="3" fill="#bfe6d0" opacity="0.5"/>
-  </g>
+  <!-- nipote A1 -->
+  <circle cx="386" cy="312" r="26" fill="url(#node)" stroke="#34d27e" stroke-width="5"/>
+  <circle cx="386" cy="312" r="9" fill="#ffc24d"/>
 
   <!-- figlio B -->
-  <g>
-    <rect x="190" y="332" width="150" height="46" rx="13" fill="#143524" stroke="#2e9e63" stroke-width="3"/>
-    <circle cx="211" cy="355" r="7" fill="#4ae08c"/>
-    <rect x="228" y="347" width="86" height="7" rx="3" fill="#eafff3" opacity="0.85"/>
-    <rect x="228" y="360" width="58" height="6" rx="3" fill="#bfe6d0" opacity="0.5"/>
-  </g>
+  <circle cx="270" cy="358" r="30" fill="url(#node)" stroke="#34d27e" stroke-width="5"/>
+  <circle cx="270" cy="358" r="10" fill="#4ae08c"/>
 </svg>

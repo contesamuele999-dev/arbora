@@ -3,6 +3,8 @@ import { RenderedBlock } from '../lib/markdown.jsx'
 import { logChars } from '../lib/activity.js'
 import { cacheVistaLocal } from '../lib/localcache.js'
 import { STAGES, stageOf } from '../lib/stages.js'
+import { store } from '../lib/store.js'
+import { prepareImage } from '../lib/images.js'
 
 const uid = () => 'b-' + Math.random().toString(36).slice(2, 9)
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -63,7 +65,7 @@ function parseIndented(text, base = 0) {
 // Editor della singola VISTA: blocchi markdown, drag&drop (riordino + nidificazione),
 // click=modifica · doppio click=copia · icona cestino=elimina (con recupero 7 giorni),
 // selezione multipla + copia/taglia/incolla di sezioni intere, undo/redo.
-export default function Editor({ vista, onChange, onWikilink, focusMode, allViste = [], onSetStage }) {
+export default function Editor({ vista, onChange, onWikilink, focusMode, allViste = [], onSetStage, onClose }) {
   const [stagePick, setStagePick] = useState(false)
   const [blocks, setBlocks] = useState(vista.blocchi?.length ? vista.blocchi : [{ id: uid(), text: '' }])
   const [title, setTitle] = useState(vista.titolo || '')
@@ -81,7 +83,13 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const [clipCount, setClipCount] = useState(SECTION_CLIP.length)
   const [search, setSearch] = useState('')             // ricerca fra le righe DENTRO questa vista
   const [duePick, setDuePick] = useState(null)         // id della riga di cui si sta impostando la scadenza
+  const [bulkDue, setBulkDue] = useState(false)        // popup scadenza per le righe selezionate (Ctrl+D in selezione)
+  const [lightbox, setLightbox] = useState(null)       // { blockId, i } immagine aperta a schermo intero
+  const [imgBusy, setImgBusy] = useState(false)        // caricamento immagine in corso
   const [, setTick] = useState(0)                      // ri-valuta le scadenze nel tempo (senza interazione)
+  const searchRef = useRef(null)                       // input ricerca vista (per la digitazione libera)
+  const imgInputRef = useRef(null)                     // input file nascosto per allegare immagini
+  const imgTargetId = useRef(null)                     // riga a cui allegare l'immagine scelta
   const undoStack = useRef([])
   const redoStack = useRef([])
   const saveTimer = useRef(null)
@@ -100,6 +108,12 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   // imposta o rimuove la scadenza di una riga ('' = rimuovi)
   const setDue = (id, due) => {
     const next = blocks.map(b => b.id === id ? { ...b, due: due || undefined } : b)
+    commit(next)
+  }
+  // imposta la stessa scadenza su tutte le righe selezionate ('' = rimuovi)
+  const setDueMany = (due) => {
+    if (!selected.size) return
+    const next = blocks.map(b => selected.has(b.id) ? { ...b, due: due || undefined } : b)
     commit(next)
   }
 
@@ -231,7 +245,29 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         e.preventDefault()
         cutSection()
       }
+      // Ctrl+M = MAIUSCOLO (righe selezionate oppure la riga in modifica)
+      else if ((e.ctrlKey || e.metaKey) && (e.key === 'm' || e.key === 'M')) {
+        e.preventDefault()
+        upperShortcut()
+      }
+      // Ctrl+D = imposta la scadenza (riga in modifica → il suo popup; selezione → popup multiplo)
+      else if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+        if (editing) { e.preventDefault(); setDuePick(editing) }
+        else if (selectMode && selected.size) { e.preventDefault(); setBulkDue(true) }
+      }
       // ---- scorciatoie in MODALITÀ SELEZIONE (solo fuori dai campi di testo) ----
+      else if (selectMode && selected.size && e.key === 'Delete') {
+        const tag = document.activeElement?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return
+        e.preventDefault()
+        deleteSelected()   // Canc = elimina le righe selezionate (nel cestino)
+      }
+      else if (selectMode && selected.size && e.key === 'Backspace') {
+        const tag = document.activeElement?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return
+        e.preventDefault()
+        clearSelected()    // Backspace = svuota solo il contenuto delle righe selezionate
+      }
       else if (selectMode && e.key === 'Escape') {
         e.preventDefault()
         exitSelect()   // Esc = esci dalla selezione
@@ -254,6 +290,23 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         if (tag === 'INPUT' || tag === 'TEXTAREA') return
         e.preventDefault()
         addBlock(null)
+      }
+      // Esc senza nulla aperto → chiudi la vista (torna all'elenco). L'editing di riga
+      // e la ricerca gestiscono Esc per conto loro e fermano la propagazione.
+      else if (e.key === 'Escape' && !selectMode && !editing) {
+        const tag = document.activeElement?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return
+        e.preventDefault()
+        onClose?.()
+      }
+      // Digitando una lettera (fuori da campi, non in editing/selezione) il testo va
+      // automaticamente nella barra di ricerca della vista.
+      else if (!selectMode && !editing && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const tag = document.activeElement?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return
+        e.preventDefault()
+        setSearch(s => s + e.key)
+        requestAnimationFrame(() => searchRef.current?.focus())
       }
     }
     window.addEventListener('keydown', h)
@@ -339,6 +392,86 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     commit(next)
   }
 
+  // ---- selezione: svuota il contenuto (Backspace) o elimina le righe (Canc) ----
+  const clearSelected = () => {
+    if (!selected.size) return
+    const next = blocks.map(b => selected.has(b.id) ? { ...b, text: '' } : b)
+    commit(next)
+  }
+  const deleteSelected = () => {
+    if (!selected.size) return
+    const removed = blocks.filter(b => selected.has(b.id))
+    let nextBlocks = blocks.filter(b => !selected.has(b.id))
+    if (!nextBlocks.length) nextBlocks = [{ id: uid(), text: '', indent: 0 }]
+    const nextTrash = [...removed.map(b => ({ ...b, deletedAt: Date.now() })), ...trash].slice(0, 200)
+    pushUndo(blocks)
+    setBlocks(nextBlocks); setTrash(nextTrash); setSelected(new Set())
+    persist(nextBlocks, title, nextTrash)
+    setToast(`Eliminate ${removed.length} riga${removed.length > 1 ? 'e' : ''}`); setTimeout(() => setToast(''), 1300)
+  }
+
+  // ---- MAIUSCOLO via scorciatoia (Ctrl+M): righe selezionate, oppure la riga in modifica ----
+  const upperShortcut = () => {
+    if (selectMode && selected.size) {
+      const next = blocks.map(b => selected.has(b.id) ? { ...b, text: (b.text || '').toUpperCase() } : b)
+      commit(next)
+      return
+    }
+    upperActive()
+  }
+
+  // ---- immagini allegate alle righe: upload su Supabase Storage (o base64 in demo) ----
+  const openImagePicker = (id) => { imgTargetId.current = id; imgInputRef.current?.click() }
+  const onImageChosen = async (file) => {
+    const id = imgTargetId.current
+    if (!file || !id || !file.type?.startsWith('image/')) return
+    setImgBusy(true)
+    setToast('Carico immagine…')
+    try {
+      const { blob, base64 } = await prepareImage(file)
+      let entry
+      if (store.isCloud) { const r = await store.uploadImage(blob, vista.id); entry = { url: r.url, path: r.path } }
+      else entry = { url: base64, path: null }
+      const next = blocks.map(b => b.id === id ? { ...b, imgs: [...(b.imgs || []), entry] } : b)
+      commit(next)
+      setToast('Immagine allegata')
+    } catch (e) {
+      setToast('Errore immagine: ' + (e?.message || e))
+    } finally {
+      setImgBusy(false); imgTargetId.current = null
+      setTimeout(() => setToast(''), 1500)
+    }
+  }
+  const removeImageAt = (blockId, i) => {
+    const b = blocks.find(x => x.id === blockId)
+    const img = (b?.imgs || [])[i]
+    const next = blocks.map(x => x.id === blockId ? { ...x, imgs: (x.imgs || []).filter((_, j) => j !== i) } : x)
+    commit(next)
+    if (img?.path && store.isCloud) store.removeImage(img.path).catch(() => {})
+    setLightbox(null)
+  }
+
+  // sezione (blocco + suo sotto-albero) per la selezione con Shift+click
+  const sectionIdsOf = (b) => {
+    const i = blocks.findIndex(x => x.id === b.id)
+    const ids = new Set([b.id])
+    if (i < 0) return ids
+    const hl = headingLevel(b.text)
+    if (hl > 0) {
+      for (let j = i + 1; j < blocks.length; j++) {
+        const jl = headingLevel(blocks[j].text)
+        if (jl > 0 && jl <= hl) break
+        ids.add(blocks[j].id)
+      }
+    } else {
+      const base = b.indent || 0
+      for (let j = i + 1; j < blocks.length; j++) {
+        if ((blocks[j].indent || 0) > base) ids.add(blocks[j].id); else break
+      }
+    }
+    return ids
+  }
+
   // ---- elimina riga: va nel CESTINO (recuperabile 7 giorni) ----
   const deleteBlock = (id) => {
     const b = blocks.find(x => x.id === id)
@@ -383,8 +516,14 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
   // ---- click = modifica · doppio click = copia · triplo click/tap = selezione ----
   const tapRef = useRef({ id: null, n: 0, t: null })
-  const activateBlock = (b) => {
+  const activateBlock = (b, e) => {
     if (rowJustHandled.current) { rowJustHandled.current = false; return }  // veniamo da un drag/swipe della riga
+    // Shift+click in selezione (da PC) = seleziona l'intera sezione (blocco + figli)
+    if (selectMode && e?.shiftKey) {
+      const sec = sectionIdsOf(b)
+      setSelected(s => { const n = new Set(s); sec.forEach(id => n.add(id)); return n })
+      return
+    }
     if (selectMode) {
       // triplo tocco = esci dalla selezione (comodo su telefono/tablet, dove la barra
       // con la ✕ può essere fuori schermo). I primi due tap si annullano a vicenda.
@@ -750,6 +889,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
   return (
     <div className="editor" ref={rootRef} tabIndex={-1}>
+      <div className="editor-sticky">
       <div className="editor-head">
         <input className="editor-title" value={title} placeholder="Titolo della vista…"
           onChange={e => titleChange(e.target.value)} />
@@ -788,17 +928,6 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
       {!focusMode && (
         <>
-        <div className="link-hint">
-          <ul className="hint-list">
-            <li><b>Tap</b> riga = modifica · <b>doppio</b> = copia · <b>triplo</b> = selezione</li>
-            <li><b>＋</b> nuova riga (anche in mezzo) · <b>⌫</b> svuota · <b>🗑</b> elimina (7 gg)</li>
-            <li><b>Invio</b> nuova riga · <b>Tab</b>/<b>⇤⇥</b> nidifica · trascina ←/→</li>
-            <li><code>Ctrl+B</code> grassetto · <code>Ctrl+I</code> corsivo · <code>Ctrl+Z</code>/<code>Ctrl+Y</code> annulla/ripeti</li>
-            <li><b>☑ Seleziona</b> → <code>Ctrl+C</code>/<code>Ctrl+X</code> · <code>Ctrl+A</code> tutte · <code>Tab</code>/<code>⇧Tab</code> rientro · <code>Esc</code>/triplo tocco esci</li>
-            <li><b>📅</b> scadenza riga (sfondo colorato + countdown) · <b>AA</b> MAIUSCOLO</li>
-            <li><b>🔍</b> cerca nella vista · <b>🔗</b> collega vista · swipe ←/→ cambia vista</li>
-          </ul>
-        </div>
         <div className="toolbar" data-noswipe="" onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()}>
           <button className="iconbtn" title="Annulla (Ctrl+Z)" onClick={undo}>↶</button>
           <button className="iconbtn" title="Ripeti (Ctrl+Y)" onClick={redo}>↷</button>
@@ -846,6 +975,30 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         </>
       )}
 
+      {suggestions.length > 0 && (
+        <div className="link-suggest">
+          <span className="link-suggest-lbl">Collega a:</span>
+          {suggestions.map(name => (
+            <button key={name} className="link-suggest-chip" onClick={() => applyLink(name)}>🔗 {name}</button>
+          ))}
+        </div>
+      )}
+      </div>
+
+      {!focusMode && (
+        <div className="link-hint">
+          <ul className="hint-list">
+            <li><b>Click</b> riga = modifica · <b>doppio</b> = copia · <b>triplo</b> = selezione · <b>rotellina</b> = nuova riga sotto</li>
+            <li><b>＋</b> nuova riga · <b>⌫</b> svuota · <b>🗑</b> elimina (7 gg) · <b>🖼</b> allega immagine</li>
+            <li><b>Invio</b> nuova riga · <b>Tab</b>/<b>⇧Tab</b> nidifica · trascina ←/→ · <code>Esc</code> chiudi vista</li>
+            <li><code>Ctrl+B</code> grassetto · <code>Ctrl+I</code> corsivo · <code>Ctrl+M</code> MAIUSCOLO · <code>Ctrl+D</code> scadenza · <code>Ctrl+Z</code>/<code>Ctrl+Y</code> annulla/ripeti</li>
+            <li><b>☑ Seleziona</b> → <code>Ctrl+C</code>/<code>Ctrl+X</code>/<code>Ctrl+A</code> · <code>Tab</code> rientro · <code>Canc</code> elimina · <code>Backspace</code> svuota · <code>Shift+click</code> sezione · <code>Esc</code> esci</li>
+            <li><b>📅</b> scadenza riga (sfondo colorato + countdown) · <b>AA</b>/<code>Ctrl+M</code> MAIUSCOLO</li>
+            <li><b>🔍</b> cerca (o scrivi per cercare) · <b>🔗</b> collega vista · swipe ←/→ cambia vista</li>
+          </ul>
+        </div>
+      )}
+
       {/* Pannello CESTINO (nascosto, si apre col pulsante) */}
       {showTrash && !focusMode && (
         <div className="trash-panel">
@@ -866,18 +1019,11 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         </div>
       )}
 
-      {suggestions.length > 0 && (
-        <div className="link-suggest">
-          <span className="link-suggest-lbl">Collega a:</span>
-          {suggestions.map(name => (
-            <button key={name} className="link-suggest-chip" onClick={() => applyLink(name)}>🔗 {name}</button>
-          ))}
-        </div>
-      )}
-
       <div className="view-search" data-noswipe="">
         <span className="view-search-ico">🔍</span>
-        <input className="view-search-input" value={search} onChange={e => setSearch(e.target.value)}
+        <input className="view-search-input" ref={searchRef} value={search}
+          onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); if (search) setSearch(''); else e.currentTarget.blur() } }}
           placeholder="Cerca in questa vista…" />
         {sq && <span className="view-search-count">{matchCount} ris.</span>}
         {search && <button className="view-search-clear" title="Pulisci" onClick={() => setSearch('')}>✕</button>}
@@ -931,6 +1077,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
                 if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); applyWrap(el, b.id, '**') }
                 else if ((e.ctrlKey || e.metaKey) && (e.key === 'i' || e.key === 'I')) { e.preventDefault(); applyWrap(el, b.id, '*') }
                 else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addBlock(b.id) }
+                else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditing(null) }
                 else if (e.key === 'Backspace' && b.text === '') { e.preventDefault(); deleteBlock(b.id) }
                 else if (e.key === 'Tab') { e.preventDefault(); const i = blocks.findIndex(x=>x.id===b.id); if (e.shiftKey) setIndent(b.id, Math.max(0,(b.indent||0)-1)); else setIndent(b.id, Math.min(maxIndentFor(blocks, i),(b.indent||0)+1)) }
               }} />
@@ -938,9 +1085,20 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
             <div className="rendered"
               onPointerDown={e => onRowDown(e, b)} onPointerMove={onRowMove}
               onPointerUp={onRowUp} onPointerCancel={onRowCancel}
-              onClick={() => activateBlock(b)} onDoubleClick={() => doubleBlock(b)}
-              title="Click: modifica · Doppio click: copia · tieni premuto per trascinare · swipe ←/→ per nidificare">
+              onMouseDown={e => { if (e.button === 1) e.preventDefault() }}
+              onAuxClick={e => { if (e.button === 1) { e.preventDefault(); addBlock(b.id) } }}
+              onClick={e => activateBlock(b, e)} onDoubleClick={() => doubleBlock(b)}
+              title="Click: modifica · Doppio click: copia · rotellina: nuova riga sotto · tieni premuto per trascinare · swipe ←/→ per nidificare">
               {b.text ? <RenderedBlock text={b.text} onWikilink={onWikilink} /> : <span style={{color:'var(--text-dim)'}}>Vuoto — clicca per scrivere</span>}
+            </div>
+          )}
+          {b.imgs?.length > 0 && (
+            <div className="row-thumbs" data-noswipe="">
+              {b.imgs.map((im, i) => (
+                <button key={i} className="row-thumb" title="Apri immagine"
+                  onClick={() => setLightbox({ blockId: b.id, i })}
+                  style={{ backgroundImage: `url("${im.url}")` }} />
+              ))}
             </div>
           )}
           {di && (
@@ -958,8 +1116,10 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
                   <div className="due-scrim" onClick={() => setDuePick(null)} />
                   <div className="due-pop" onClick={e => e.stopPropagation()}>
                     <label className="due-pop-lbl">Scadenza</label>
+                    {/* alla scelta chiudiamo subito il popup: evita il "flicker" dovuto al
+                        re-render mentre il selettore nativo è ancora aperto */}
                     <input type="date" className="due-input" value={b.due || ''}
-                      onChange={e => setDue(b.id, e.target.value)} />
+                      onChange={e => { setDue(b.id, e.target.value); setDuePick(null) }} />
                     <div className="due-pop-row">
                       {b.due && <button className="pillbtn danger" onClick={() => { setDue(b.id, ''); setDuePick(null) }}>Rimuovi</button>}
                       <button className="pillbtn" onClick={() => setDuePick(null)}>Fatto</button>
@@ -968,6 +1128,10 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
                 </>
               )}
             </div>
+          )}
+          {!selectMode && (
+            <button className="iconbtn row-img" title="Allega un'immagine a questa riga"
+              onClick={() => openImagePicker(b.id)} disabled={imgBusy}>🖼</button>
           )}
           {!selectMode && b.text && (
             <button className="iconbtn row-clear" title="Svuota il contenuto della riga"
@@ -987,6 +1151,41 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
       </div>
 
       <button className="add-btn" style={{marginTop:12}} onClick={() => addBlock(null)}>＋ Aggiungi blocco in fondo</button>
+
+      {/* input file nascosto per gli allegati immagine */}
+      <input ref={imgInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; onImageChosen(f) }} />
+
+      {/* scadenza per le righe selezionate (Ctrl+D in selezione) */}
+      {bulkDue && (
+        <div className="due-scrim due-scrim-center" onClick={() => setBulkDue(false)}>
+          <div className="due-pop due-pop-center" onClick={e => e.stopPropagation()}>
+            <label className="due-pop-lbl">Scadenza · {selected.size} righe</label>
+            <input type="date" className="due-input" autoFocus
+              onChange={e => { setDueMany(e.target.value); setBulkDue(false) }} />
+            <div className="due-pop-row">
+              <button className="pillbtn danger" onClick={() => { setDueMany(''); setBulkDue(false) }}>Rimuovi</button>
+              <button className="pillbtn" onClick={() => setBulkDue(false)}>Chiudi</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* immagine a schermo intero (lightbox) */}
+      {lightbox && (() => {
+        const lb = blocks.find(b => b.id === lightbox.blockId)
+        const im = lb?.imgs?.[lightbox.i]
+        if (!im) return null
+        return (
+          <div className="img-lightbox" onClick={() => setLightbox(null)}>
+            <img src={im.url} alt="" onClick={e => e.stopPropagation()} />
+            <div className="img-lightbox-bar" onClick={e => e.stopPropagation()}>
+              <button className="pillbtn danger" onClick={() => removeImageAt(lightbox.blockId, lightbox.i)}>🗑 Rimuovi</button>
+              <button className="pillbtn" onClick={() => setLightbox(null)}>Chiudi</button>
+            </div>
+          </div>
+        )
+      })()}
 
       {ghost && <div className="drag-ghost" style={{ left: ghost.x + 14, top: ghost.y + 10 }}>{shortText(ghost.text)}</div>}
       {toast && <div className="editor-toast">{toast}</div>}
