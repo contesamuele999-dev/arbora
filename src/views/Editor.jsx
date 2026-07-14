@@ -50,6 +50,33 @@ const relTime = (ts) => {
 }
 const shortText = (t) => (t || '').replace(/[#*`>]/g, '').trim().slice(0, 44) || 'riga'
 
+// ---- Scorciatoie con "/" (slash) durante la scrittura di una riga ----
+const MESI_FULL = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre']
+const MESI_ABBR = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic']
+const GIORNI = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato']
+const pad2 = (n) => String(n).padStart(2, '0')
+// valore inserito da una scorciatoia, calcolato al momento dell'inserimento
+const slashValue = (key) => {
+  const d = new Date()
+  switch (key) {
+    case 'date':  return `${d.getDate()} ${MESI_FULL[d.getMonth()]} ${d.getFullYear()}`
+    case 'sdate': return `${d.getDate()} ${MESI_ABBR[d.getMonth()]}`
+    case 'ndate': return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`
+    case 'time':  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+    case 'now':   return `${d.getDate()} ${MESI_ABBR[d.getMonth()]} ${d.getFullYear()}, ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+    case 'day':   return GIORNI[d.getDay()]
+    default:      return ''
+  }
+}
+const SLASH_CMDS = [
+  { key: 'date',  label: '/date',  desc: 'giorno mese anno' },
+  { key: 'sdate', label: '/sdate', desc: 'giorno e mese abbreviato' },
+  { key: 'ndate', label: '/ndate', desc: 'gg/mm/aaaa' },
+  { key: 'time',  label: '/time',  desc: 'ora:minuti' },
+  { key: 'now',   label: '/now',   desc: 'data e ora' },
+  { key: 'day',   label: '/day',   desc: 'giorno della settimana' },
+]
+
 // Divide un testo multilinea in righe con livello di rientro dedotto dagli spazi/tab iniziali
 // (2 spazi = 1 livello, oppure 1 tab = 1 livello). `base` è il rientro di partenza.
 function parseIndented(text, base = 0) {
@@ -87,6 +114,9 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const [lightbox, setLightbox] = useState(null)       // { blockId, i } immagine aperta a schermo intero
   const [imgBusy, setImgBusy] = useState(false)        // caricamento immagine in corso
   const [, setTick] = useState(0)                      // ri-valuta le scadenze nel tempo (senza interazione)
+  const [slash, setSlash] = useState(null)             // { blockId, start, query, sel } menu scorciatoie "/"
+  const [menuId, setMenuId] = useState(null)           // id della riga con il menu azioni (⋮) aperto su mobile
+  const editRef = useRef(null)                          // textarea della riga in modifica (per il caret dopo una scorciatoia)
   const searchRef = useRef(null)                       // input ricerca vista (per la digitazione libera)
   const imgInputRef = useRef(null)                     // input file nascosto per allegare immagini
   const imgTargetId = useRef(null)                     // riga a cui allegare l'immagine scelta
@@ -132,6 +162,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     setTitle(vista.titolo || '')
     setTrash(cleanTrash)
     setEditing(null); setSelectMode(false); setSelected(new Set()); setShowTrash(false); setSearch('')
+    setSlash(null); setMenuId(null)
     prevChars.current = totalChars(vista.blocchi)
     undoStack.current = []; redoStack.current = []
     if ((vista.cestino || []).length !== cleanTrash.length) {
@@ -514,8 +545,12 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     setToast('Foglio copiato'); setTimeout(() => setToast(''), 1200)
   }
 
-  // ---- click = modifica · doppio click = copia · triplo click/tap = selezione ----
-  const tapRef = useRef({ id: null, n: 0, t: null })
+  // ---- 1 tap = modifica · 2 tap = copia · 3 tap = selezione ----
+  // Conteggio unificato dei tap ravvicinati (funziona identico su desktop e mobile:
+  // non dipende più dall'evento nativo "dblclick", che sul touch spesso non arriva —
+  // era la causa per cui doppio/triplo tocco aprivano solo la modifica).
+  const tapRef = useRef({ id: null, n: 0 })
+  const TAP_MS = 260
   const activateBlock = (b, e) => {
     if (rowJustHandled.current) { rowJustHandled.current = false; return }  // veniamo da un drag/swipe della riga
     // Shift+click in selezione (da PC) = seleziona l'intera sezione (blocco + figli)
@@ -524,43 +559,38 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
       setSelected(s => { const n = new Set(s); sec.forEach(id => n.add(id)); return n })
       return
     }
+    const tr = tapRef.current
+    if (tr.id !== b.id) { tr.id = b.id; tr.n = 0 }
+    tr.n++
+    clearTimeout(clickTimer.current)   // annulla l'azione in sospeso del tap precedente
+
     if (selectMode) {
-      // triplo tocco = esci dalla selezione (comodo su telefono/tablet, dove la barra
-      // con la ✕ può essere fuori schermo). I primi due tap si annullano a vicenda.
-      const tr = tapRef.current
-      if (tr.id !== b.id) { tr.id = b.id; tr.n = 0 }
-      tr.n++
-      clearTimeout(tr.t)
+      // in selezione: 3 tocchi = esci (comodo su telefono, dove la ✕ può essere fuori schermo)
       if (tr.n >= 3) {
-        tr.n = 0; tr.id = null
+        tr.n = 0; tr.id = null; clickTimer.current = null
         exitSelect()
         try { navigator.vibrate?.(12) } catch { /* ignore */ }
         return
       }
-      tr.t = setTimeout(() => { tr.id = null; tr.n = 0 }, 480)
-      toggleSelect(b.id)
+      toggleSelect(b.id)   // il toggle è reversibile: 1° tocco seleziona, 2° deseleziona, 3° esce
+      clickTimer.current = setTimeout(() => { tr.id = null; tr.n = 0 }, TAP_MS)
       return
     }
-    // conteggio tap ravvicinati sulla stessa riga: 3 = attiva la selezione
-    const tr = tapRef.current
-    if (tr.id !== b.id) { tr.id = b.id; tr.n = 0 }
-    tr.n++
-    clearTimeout(tr.t)
+
+    // 3° tocco → attiva la selezione su questa riga
     if (tr.n >= 3) {
-      tr.n = 0; tr.id = null
-      if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null }
+      tr.n = 0; tr.id = null; clickTimer.current = null
       setEditing(null); setSelectMode(true); setSelected(new Set([b.id]))
       try { navigator.vibrate?.(12) } catch { /* ignore */ }
       return
     }
-    tr.t = setTimeout(() => { tr.id = null; tr.n = 0 }, 480)
-    if (clickTimer.current) return               // arriverà il doppio click
-    clickTimer.current = setTimeout(() => { clickTimer.current = null; setEditing(b.id) }, 230)
-  }
-  const doubleBlock = (b) => {
-    if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null }
-    if (selectMode) return
-    copyBlock(b)
+    // 1° o 2° tocco: rimanda l'azione, così un tocco successivo può "promuoverla"
+    const n = tr.n
+    clickTimer.current = setTimeout(() => {
+      clickTimer.current = null; tr.id = null; tr.n = 0
+      if (n === 1) setEditing(b.id)     // singolo = modifica
+      else copyBlock(b)                 // doppio = copia
+    }, TAP_MS)
   }
 
   // ---- selezione multipla ----
@@ -872,6 +902,38 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     setText(editing, linkifyName(b.text, name))
   }
 
+  // ---- scorciatoie "/" : rileva il token /parola prima del cursore e propone i comandi ----
+  const detectSlash = (id, el) => {
+    const val = el.value
+    const pos = el.selectionStart ?? val.length
+    const m = val.slice(0, pos).match(/(^|\s)\/(\w*)$/)
+    if (m) setSlash({ blockId: id, start: pos - m[2].length - 1, query: m[2].toLowerCase(), sel: 0 })
+    else setSlash(null)
+  }
+  const slashOptions = () => {
+    if (!slash) return []
+    const q = slash.query
+    return SLASH_CMDS.filter(c => c.key.startsWith(q))
+  }
+  // sostituisce il token /parola con il valore del comando scelto
+  const applySlash = (cmd) => {
+    if (!slash || !cmd) return
+    const b = blocks.find(x => x.id === slash.blockId)
+    if (!b) { setSlash(null); return }
+    const val = b.text
+    const before = val.slice(0, slash.start)
+    const after = val.slice(slash.start + 1 + slash.query.length)
+    const ins = slashValue(cmd.key)
+    const nv = before + ins + after
+    setText(b.id, nv)
+    setSlash(null)
+    const caret = (before + ins).length
+    requestAnimationFrame(() => {
+      const el = editRef.current
+      if (el) { try { el.focus(); el.selectionStart = el.selectionEnd = caret; autosize(el) } catch { /* ignore */ } }
+    })
+  }
+
   const isPlain = (t) => t && !t.startsWith('#') && t.trim() !== '---'
 
   // ---- ricerca dentro la vista: evidenzia le righe che contengono il testo cercato ----
@@ -975,6 +1037,10 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         </>
       )}
 
+      </div>
+
+      {/* Suggerimenti di collegamento: FUORI dal gruppo ancorato (.editor-sticky) così su
+          mobile non finiscono più coperti dalle barre strumenti/selezione fisse in alto. */}
       {suggestions.length > 0 && (
         <div className="link-suggest">
           <span className="link-suggest-lbl">Collega a:</span>
@@ -983,7 +1049,6 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           ))}
         </div>
       )}
-      </div>
 
       {!focusMode && (
         <div className="link-hint">
@@ -1059,13 +1124,16 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           )}
           <span className="handle" title="Trascina · dx/sx per nidificare">⠿</span>
           {editing === b.id ? (
+            <div className="row-edit" data-noswipe="">
             <textarea
               className="row-input"
-              ref={el => { if (el) { autosize(el); if (document.activeElement !== el) el.focus({ preventScroll: true }) } }}
+              ref={el => { editRef.current = el; if (el) { autosize(el); if (document.activeElement !== el) el.focus({ preventScroll: true }) } }}
               value={b.text} rows={1}
               onInput={e => autosize(e.target)}
-              onChange={e => setText(b.id, e.target.value)}
-              onBlur={() => setEditing(null)}
+              onChange={e => { setText(b.id, e.target.value); detectSlash(b.id, e.target) }}
+              onKeyUp={e => detectSlash(b.id, e.currentTarget)}
+              onClick={e => detectSlash(b.id, e.currentTarget)}
+              onBlur={() => { setEditing(null); setSlash(null) }}
               onPaste={e => {
                 const text = e.clipboardData?.getData('text') || ''
                 if (!text) return
@@ -1074,6 +1142,16 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
               }}
               onKeyDown={e => {
                 const el = e.target
+                // menu scorciatoie "/" aperto su questa riga: le frecce/Invio/Tab lo pilotano
+                if (slash && slash.blockId === b.id) {
+                  const opts = slashOptions()
+                  if (opts.length) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setSlash(s => ({ ...s, sel: (s.sel + 1) % opts.length })); return }
+                    if (e.key === 'ArrowUp')   { e.preventDefault(); setSlash(s => ({ ...s, sel: (s.sel - 1 + opts.length) % opts.length })); return }
+                    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); applySlash(opts[slash.sel] || opts[0]); return }
+                    if (e.key === 'Escape')    { e.preventDefault(); e.stopPropagation(); setSlash(null); return }
+                  }
+                }
                 if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); applyWrap(el, b.id, '**') }
                 else if ((e.ctrlKey || e.metaKey) && (e.key === 'i' || e.key === 'I')) { e.preventDefault(); applyWrap(el, b.id, '*') }
                 else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addBlock(b.id) }
@@ -1081,14 +1159,28 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
                 else if (e.key === 'Backspace' && b.text === '') { e.preventDefault(); deleteBlock(b.id) }
                 else if (e.key === 'Tab') { e.preventDefault(); const i = blocks.findIndex(x=>x.id===b.id); if (e.shiftKey) setIndent(b.id, Math.max(0,(b.indent||0)-1)); else setIndent(b.id, Math.min(maxIndentFor(blocks, i),(b.indent||0)+1)) }
               }} />
+            {slash && slash.blockId === b.id && slashOptions().length > 0 && (
+              <div className="slash-pop" data-noswipe="" onPointerDown={e => e.preventDefault()}>
+                {slashOptions().map((c, i) => (
+                  <button key={c.key} type="button"
+                    className={'slash-opt' + (i === slash.sel ? ' active' : '')}
+                    onPointerDown={e => { e.preventDefault(); applySlash(c) }}>
+                    <b className="slash-key">{c.label}</b>
+                    <span className="slash-desc">{c.desc}</span>
+                    <span className="slash-prev">{slashValue(c.key)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            </div>
           ) : (
             <div className="rendered"
               onPointerDown={e => onRowDown(e, b)} onPointerMove={onRowMove}
               onPointerUp={onRowUp} onPointerCancel={onRowCancel}
               onMouseDown={e => { if (e.button === 1) e.preventDefault() }}
               onAuxClick={e => { if (e.button === 1) { e.preventDefault(); addBlock(b.id) } }}
-              onClick={e => activateBlock(b, e)} onDoubleClick={() => doubleBlock(b)}
-              title="Click: modifica · Doppio click: copia · rotellina: nuova riga sotto · tieni premuto per trascinare · swipe ←/→ per nidificare">
+              onClick={e => activateBlock(b, e)}
+              title="1 tocco: modifica · 2 tocchi: copia · 3 tocchi: selezione · rotellina: nuova riga sotto · tieni premuto per trascinare · swipe ←/→ per nidificare">
               {b.text ? <RenderedBlock text={b.text} onWikilink={onWikilink} /> : <span style={{color:'var(--text-dim)'}}>Vuoto — clicca per scrivere</span>}
             </div>
           )}
@@ -1107,43 +1199,46 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           )}
           <span className={'copytap' + (flash === b.id ? ' copied-flash' : '')}>{flash === b.id ? 'copiato!' : ''}</span>
           {!selectMode && (
-            <div className="due-wrap" data-noswipe="">
-              <button className={'iconbtn row-due' + (b.due ? ' has' : '') + (di ? ' ' + di.cls : '')}
-                title={b.due ? 'Scadenza: ' + b.due + ' — clicca per modificare' : 'Imposta una scadenza per questa riga'}
-                onClick={() => setDuePick(p => p === b.id ? null : b.id)}>📅</button>
-              {duePick === b.id && (
-                <>
-                  <div className="due-scrim" onClick={() => setDuePick(null)} />
-                  <div className="due-pop" onClick={e => e.stopPropagation()}>
-                    <label className="due-pop-lbl">Scadenza</label>
-                    {/* alla scelta chiudiamo subito il popup: evita il "flicker" dovuto al
-                        re-render mentre il selettore nativo è ancora aperto */}
-                    <input type="date" className="due-input" value={b.due || ''}
-                      onChange={e => { setDue(b.id, e.target.value); setDuePick(null) }} />
-                    <div className="due-pop-row">
-                      {b.due && <button className="pillbtn danger" onClick={() => { setDue(b.id, ''); setDuePick(null) }}>Rimuovi</button>}
-                      <button className="pillbtn" onClick={() => setDuePick(null)}>Fatto</button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-          {!selectMode && (
-            <button className="iconbtn row-img" title="Allega un'immagine a questa riga"
-              onClick={() => openImagePicker(b.id)} disabled={imgBusy}>🖼</button>
-          )}
-          {!selectMode && b.text && (
-            <button className="iconbtn row-clear" title="Svuota il contenuto della riga"
-              onClick={() => clearBlock(b.id)}>⌫</button>
-          )}
-          {!selectMode && (
-            <button className="iconbtn row-del" title="Elimina riga (recuperabile 7 giorni)"
-              onClick={() => deleteBlock(b.id)}>🗑</button>
-          )}
-          {!selectMode && (
-            <button className="row-insert" title="Inserisci una riga qui sotto"
-              onClick={() => addBlock(b.id)}>＋</button>
+            <>
+              {/* su mobile le azioni della riga stanno dietro a un menu ⋮ (occupano meno spazio);
+                  su desktop restano allineate in riga (vedi .row-actions{display:contents}) */}
+              <button className={'iconbtn row-more' + (menuId === b.id ? ' on' : '')} title="Azioni riga"
+                data-noswipe="" onClick={() => setMenuId(m => m === b.id ? null : b.id)}>⋮</button>
+              {menuId === b.id && <div className="row-menu-scrim" onClick={() => setMenuId(null)} />}
+              <div className={'row-actions' + (menuId === b.id ? ' open' : '')} data-noswipe="">
+                <div className="due-wrap" data-noswipe="">
+                  <button className={'iconbtn row-due' + (b.due ? ' has' : '') + (di ? ' ' + di.cls : '')}
+                    title={b.due ? 'Scadenza: ' + b.due + ' — clicca per modificare' : 'Imposta una scadenza per questa riga'}
+                    onClick={() => setDuePick(p => p === b.id ? null : b.id)}>📅</button>
+                  {duePick === b.id && (
+                    <>
+                      <div className="due-scrim" onClick={() => setDuePick(null)} />
+                      <div className="due-pop" onClick={e => e.stopPropagation()}>
+                        <label className="due-pop-lbl">Scadenza</label>
+                        {/* alla scelta chiudiamo subito il popup: evita il "flicker" dovuto al
+                            re-render mentre il selettore nativo è ancora aperto */}
+                        <input type="date" className="due-input" value={b.due || ''}
+                          onChange={e => { setDue(b.id, e.target.value); setDuePick(null); setMenuId(null) }} />
+                        <div className="due-pop-row">
+                          {b.due && <button className="pillbtn danger" onClick={() => { setDue(b.id, ''); setDuePick(null); setMenuId(null) }}>Rimuovi</button>}
+                          <button className="pillbtn" onClick={() => { setDuePick(null); setMenuId(null) }}>Fatto</button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <button className="iconbtn row-img" title="Allega un'immagine a questa riga"
+                  onClick={() => { openImagePicker(b.id); setMenuId(null) }} disabled={imgBusy}>🖼</button>
+                {b.text && (
+                  <button className="iconbtn row-clear" title="Svuota il contenuto della riga"
+                    onClick={() => { clearBlock(b.id); setMenuId(null) }}>⌫</button>
+                )}
+                <button className="iconbtn row-del" title="Elimina riga (recuperabile 7 giorni)"
+                  onClick={() => { deleteBlock(b.id); setMenuId(null) }}>🗑</button>
+                <button className="row-insert" title="Inserisci una riga qui sotto"
+                  onClick={() => { addBlock(b.id); setMenuId(null) }}>＋</button>
+              </div>
+            </>
           )}
         </div>
         )

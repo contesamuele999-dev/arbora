@@ -116,9 +116,13 @@ a { color: var(--accent); text-decoration: none; }
 /* ---------- Pipe: visioni (contenitori tinti) + viste (card neutre) ---------- */
 .pipe { padding-bottom: 100px; }
 
-/* barra di ricerca */
+/* barra di ricerca — resta ancorata in alto durante lo scroll */
+.pipe-search-sticky {
+  position: sticky; top: 0; z-index: 18;
+  background: var(--bg); padding: 6px 0 4px;
+}
 .pipe-search {
-  display: flex; align-items: center; gap: 8px; margin: 4px 18px 6px;
+  display: flex; align-items: center; gap: 8px; margin: 0 18px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px;
 }
 .pipe-search:focus-within { border-color: var(--green); }
@@ -609,11 +613,9 @@ a { color: var(--accent); text-decoration: none; }
 
   .pomodoro { right: 12px; bottom: 12px; }
 
-  /* Righe più comode da telefono: casella di scrittura più alta e leggibile,
-     pulsanti azione sempre visibili (niente hover sul touch). */
+  /* Righe più comode da telefono: casella di scrittura più alta e leggibile. */
   .editor-head { padding-right: 0; }
   .block textarea { min-height: 3.2em; font-size: 16px; padding: 10px 12px; }
-  .block .row-insert, .block .row-clear, .block .row-del, .block .row-img, .block .row-due { opacity: 1; }
   /* Su telefono il trascinamento avviene tenendo premuta la riga: la maniglia ⠿
      è superflua e affollava soltanto la riga → la nascondiamo. */
   .block { gap: 5px; padding: 6px 4px; }
@@ -621,21 +623,30 @@ a { color: var(--accent); text-decoration: none; }
   .row-thumb { width: 40px; height: 40px; }
   /* barra strumenti un filo più compatta per stare in una riga */
   .toolbar .iconbtn { width: 32px; height: 32px; }
-
-  /* Pulsanti azione della riga più piccoli, così la riga non sfora a destra */
-  .block .row-due, .block .row-img, .block .row-del, .block .row-insert {
-    width: 30px; height: 30px; font-size: 13px;
-  }
-  /* su telefono togliamo lo "svuota" (⌫) dalla riga: restano 📅 🖼 🗑 ＋, meno affollamento
-     (il contenuto si può comunque svuotare in modifica o da PC). */
-  .block .row-clear { display: none; }
   .due-badge { font-size: 10px; padding: 2px 6px; }
 
-  /* MENTRE si modifica una riga, i pulsanti azione si nascondono: la casella di
-     scrittura prende tutta la larghezza (niente più testo incolonnato 1 carattere per riga). */
-  .block.editing .row-due, .block.editing .due-wrap,
-  .block.editing .row-img, .block.editing .row-clear,
-  .block.editing .row-del, .block.editing .row-insert { display: none; }
+  /* Le azioni della riga (📅 🖼 🗑 ＋ …) su telefono NON stanno più tutte in linea
+     — occupavano troppo spazio a destra. Al loro posto un solo pulsante ⋮ che apre
+     un piccolo menu galleggiante con le azioni. */
+  .row-more {
+    display: grid; place-items: center; flex: 0 0 auto;
+    width: 30px; height: 30px; font-size: 18px; line-height: 1; opacity: .8;
+  }
+  .row-more.on { opacity: 1; border-color: var(--green); }
+  .block .row-actions { display: none; }   /* nascoste finché non si apre il menu */
+  .block .row-actions.open {
+    display: flex; gap: 6px; align-items: center;
+    position: absolute; right: 4px; top: calc(100% - 2px); z-index: 45;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 7px; box-shadow: 0 8px 22px rgba(0,0,0,.45);
+  }
+  .row-menu-scrim { display: block; position: fixed; inset: 0; z-index: 44; }
+  .block .row-due, .block .row-img, .block .row-del, .block .row-insert {
+    width: 34px; height: 34px; font-size: 15px; opacity: 1;
+  }
+
+  /* mentre si modifica una riga, il menu ⋮ scompare: la textarea prende tutta la larghezza */
+  .block.editing .row-more, .block.editing .row-actions { display: none; }
 }
 
 @media (max-width: 380px) {
@@ -667,12 +678,8 @@ a { color: var(--accent); text-decoration: none; }
   border-left: 2px solid currentColor; border-bottom: 2px solid currentColor;
   border-bottom-left-radius: 8px; opacity: .55;
 }
-/* freccetta stile schema ad albero: punta verso il contenuto della riga */
-.indent-elbow::after {
-  content: ''; position: absolute; left: 16px; top: 10px;
-  width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent;
-  border-left: 5px solid var(--green-bright); opacity: .85;
-}
+/* (rimossa la freccetta triangolare a sinistra delle righe indentate: restano solo
+   le guide verticali e la curva ╰─, meno rumore visivo) */
 /* numero di livello: sovrapposto alla linea/curva invece di occupare una colonna a parte
    (un piccolo "pallino" che interrompe il tratto, come nelle UI ad albero moderne) */
 .level-num {
@@ -698,6 +705,28 @@ a { color: var(--accent); text-decoration: none; }
 .block .row-clear { width: 28px; height: 28px; font-size: 14px; flex: 0 0 auto; opacity: .55; transition: opacity .12s, border-color .12s; }
 .block:hover .row-clear { opacity: 1; }
 .block .row-clear:hover { opacity: 1; border-color: var(--accent); }
+
+/* ---- azioni riga: su desktop restano in linea; su mobile dietro a un menu ⋮ ---- */
+/* display:contents = i pulsanti si comportano come figli diretti di .block (layout invariato su desktop) */
+.row-actions { display: contents; }
+.row-more { display: none; }   /* il menu ⋮ compare solo su mobile (vedi media query) */
+.row-menu-scrim { display: none; }
+
+/* ---- riga in modifica: contenitore per la textarea + popup scorciatoie "/" ---- */
+.row-edit { flex: 1; min-width: 0; position: relative; display: flex; }
+.slash-pop {
+  position: absolute; left: 0; top: calc(100% + 4px); z-index: 50; min-width: 220px; max-width: 320px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 5px;
+  box-shadow: 0 8px 22px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 2px;
+}
+.slash-opt {
+  display: flex; align-items: baseline; gap: 8px; text-align: left; width: 100%;
+  padding: 7px 9px; border-radius: 7px; background: transparent; border: none; color: var(--text); cursor: pointer;
+}
+.slash-opt:hover, .slash-opt.active { background: color-mix(in srgb, var(--green-bright) 14%, var(--panel)); }
+.slash-key { color: var(--green-bright); font-size: 13px; font-weight: 700; flex: 0 0 auto; }
+.slash-desc { color: var(--text-dim); font-size: 11.5px; flex: 1; min-width: 0; }
+.slash-prev { color: var(--text); font-size: 11.5px; font-weight: 600; flex: 0 0 auto; opacity: .85; white-space: nowrap; }
 
 /* selezione multipla */
 .block.selected { background: color-mix(in srgb, var(--green-bright) 12%, var(--bg-2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green-bright) 45%, transparent); }

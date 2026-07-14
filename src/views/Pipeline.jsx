@@ -113,15 +113,17 @@ export default function Pipeline({ visioni, viste, query: queryProp, onQueryChan
         <button className="add-btn" onClick={onAddVisione}>＋ Nuova visione</button>
       </div>
 
-      <div className="pipe-search">
-        <span className="pipe-search-ico">🔍</span>
-        <input className="pipe-search-input" ref={searchRef} value={query} onChange={e => setQuery(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && firstResult) { e.preventDefault(); onOpen(firstResult) }
-            else if (e.key === 'Escape') { if (query) setQuery(''); else e.currentTarget.blur() }
-          }}
-          placeholder="Cerca viste (titolo, poi contenuto)…" />
-        {query && <button className="pipe-search-clear" title="Pulisci" onClick={() => setQuery('')}>✕</button>}
+      <div className="pipe-search-sticky">
+        <div className="pipe-search">
+          <span className="pipe-search-ico">🔍</span>
+          <input className="pipe-search-input" ref={searchRef} value={query} onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && firstResult) { e.preventDefault(); onOpen(firstResult) }
+              else if (e.key === 'Escape') { if (query) setQuery(''); else e.currentTarget.blur() }
+            }}
+            placeholder="Cerca viste (titolo, poi contenuto)…" />
+          {query && <button className="pipe-search-clear" title="Pulisci" onClick={() => setQuery('')}>✕</button>}
+        </div>
       </div>
 
       {sezioni.map(({ vis, list, total }) => (
