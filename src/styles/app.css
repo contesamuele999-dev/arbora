@@ -419,6 +419,7 @@ a { color: var(--accent); text-decoration: none; }
 .link-hint code { background: var(--bg); padding: 1px 5px; border-radius: 4px; color: var(--green-bright); }
 .hint-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
 .hint-list li { line-height: 1.45; }
+.hint-cat { display: inline-block; min-width: 96px; color: var(--green-bright); font-weight: 700; }
 
 /* ---------- Ricerca dentro la vista ---------- */
 .view-search {
@@ -572,6 +573,24 @@ a { color: var(--accent); text-decoration: none; }
 }
 .link-suggest-chip:hover { background: var(--panel-2); border-color: var(--green-bright); }
 
+/* ---------- Formule tipo Excel (righe che iniziano con =) ---------- */
+.formula-block {
+  display: inline-flex; align-items: baseline; gap: 4px; flex-wrap: wrap;
+  padding: 2px 8px; border-radius: 8px;
+  background: color-mix(in srgb, var(--green-bright) 8%, transparent);
+  border: 1px solid var(--green-deep);
+}
+.formula-expr { color: var(--text-dim); font-family: ui-monospace, monospace; font-size: 13px; }
+.formula-eq { color: var(--text-dim); }
+.formula-res { color: var(--green-bright); font-size: 15px; }
+
+/* ---------- Login: "Ricordami" ---------- */
+.remember-row {
+  display: flex; align-items: center; gap: 8px; margin: 4px 0 10px;
+  font-size: 13px; color: var(--text-dim); cursor: pointer; user-select: none;
+}
+.remember-row input { width: 16px; height: 16px; accent-color: var(--green-bright); cursor: pointer; }
+
 /* ---------- Ottimizzazione telefono ---------- */
 @media (max-width: 560px) {
   .topbar { padding: 8px 10px; gap: 8px; }
@@ -713,7 +732,9 @@ a { color: var(--accent); text-decoration: none; }
 .row-menu-scrim { display: none; }
 
 /* ---- riga in modifica: contenitore per la textarea + popup scorciatoie "/" ---- */
-.row-edit { flex: 1; min-width: 0; position: relative; display: flex; }
+.row-edit { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; align-items: stretch; }
+/* suggerimenti di collegamento ancorati sotto la riga in modifica */
+.row-edit .link-suggest { margin: 6px 0 2px; }
 .slash-pop {
   position: absolute; left: 0; top: calc(100% + 4px); z-index: 50; min-width: 220px; max-width: 320px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 5px;

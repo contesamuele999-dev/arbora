@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../lib/auth.jsx'
+import { REMEMBER_KEY } from '../lib/supabase.js'
 
 export default function Auth() {
   const { signIn, signUp, isDemo } = useAuth()
@@ -9,9 +10,14 @@ export default function Auth() {
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+  const [remember, setRemember] = useState(() => {
+    try { return localStorage.getItem(REMEMBER_KEY) !== '0' } catch { return true }
+  })
 
   const submit = async (e) => {
     e.preventDefault()
+    // registra la scelta "ricordami" PRIMA del login: lo storage di Supabase la legge subito
+    try { localStorage.setItem(REMEMBER_KEY, remember ? '1' : '0') } catch { /* ignore */ }
     setErr(''); setMsg(''); setBusy(true)
     const fn = mode === 'in' ? signIn : signUp
     const { error } = await fn(email, pw)
@@ -44,6 +50,10 @@ export default function Auth() {
             <input className="input" type="password" required minLength={6} value={pw}
               onChange={e => setPw(e.target.value)} placeholder="••••••••" />
           </div>
+          <label className="remember-row">
+            <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
+            <span>Ricordami su questo dispositivo</span>
+          </label>
           {err && <div className="err">{err}</div>}
           {msg && <div style={{color:'var(--green-bright)',fontSize:13,margin:'8px 0'}}>{msg}</div>}
           <button className="btn" disabled={busy}>

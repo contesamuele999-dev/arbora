@@ -1,6 +1,28 @@
 // Mini renderer markdown inline (titoli, grassetto, corsivo, code, wikilink [[...]])
 // Volutamente leggero: niente dipendenze, veloce per il flusso creativo.
 
+// ---- Formule tipo Excel: una riga che inizia con "=" viene calcolata ----
+// Supporta + - * / ( ) e le potenze con ^, più alcune funzioni (sqrt, round,
+// floor, ceil, abs, min, max, pow). La virgola è ammessa solo dentro le funzioni
+// (es. =min(3,5)); come separatore decimale usare il punto (es. =1.5*2).
+// Nessun eval arbitrario: si accettano solo cifre, operatori e i nomi funzione noti.
+const FORMULA_FNS = ['sqrt', 'round', 'floor', 'ceil', 'abs', 'min', 'max', 'pow']
+export function evalFormula(raw) {
+  let e = (raw || '').trim()
+  if (!e) return null
+  e = e.replace(/×/g, '*').replace(/÷/g, '/').replace(/\^/g, '**')
+  // togliamo i nomi funzione noti, poi verifichiamo che resti solo aritmetica sicura
+  const cleaned = e.replace(new RegExp('\\b(' + FORMULA_FNS.join('|') + ')\\b', 'g'), '')
+  if (/[^0-9+\-*/().,%\s]/.test(cleaned)) return null
+  try {
+    // eslint-disable-next-line no-new-func
+    const fn = new Function(...FORMULA_FNS, 'return (' + e + ')')
+    const r = fn(Math.sqrt, Math.round, Math.floor, Math.ceil, Math.abs, Math.min, Math.max, Math.pow)
+    if (typeof r === 'number' && isFinite(r)) return Math.round(r * 1e10) / 1e10
+  } catch { /* espressione non valida */ }
+  return null
+}
+
 export function renderInline(text) {
   // gestisce **bold**, *italic*, `code`, ((collegamento)) e [[collegamento]]
   const parts = []
@@ -29,6 +51,17 @@ export function RenderedBlock({ text, onWikilink }) {
   const click = (e) => {
     const link = e.target.getAttribute?.('data-link')
     if (link && onWikilink) { e.stopPropagation(); onWikilink(link) }
+  }
+  if (t.startsWith('=') && t.length > 1) {
+    const res = evalFormula(t.slice(1))
+    if (res !== null) return (
+      <div onClick={click} className="formula-block">
+        <span className="formula-expr">{t}</span>
+        <span className="formula-eq"> = </span>
+        <b className="formula-res">{res}</b>
+      </div>
+    )
+    // non calcolabile: mostra il testo così com'è
   }
   if (t.startsWith('### ')) return <h3 onClick={click}>{renderInline(t.slice(4))}</h3>
   if (t.startsWith('## ')) return <h2 onClick={click}>{renderInline(t.slice(3))}</h2>

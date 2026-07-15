@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { RenderedBlock } from '../lib/markdown.jsx'
+import { RenderedBlock, evalFormula } from '../lib/markdown.jsx'
 import { logChars } from '../lib/activity.js'
 import { cacheVistaLocal } from '../lib/localcache.js'
 import { STAGES, stageOf } from '../lib/stages.js'
@@ -132,6 +132,21 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
   useEffect(() => { if (editing) lastEdit.current = editing }, [editing])
 
+  // Mobile: quando si apre la tastiera la riga in modifica può finire nascosta
+  // (soprattutto se è fra le ultime). Portiamola sempre al centro dello schermo
+  // sia all'apertura sia quando la tastiera cambia l'altezza visibile (visualViewport).
+  useEffect(() => {
+    if (!editing) return
+    const bring = () => {
+      const el = editRef.current
+      if (el) { try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }) } catch { /* ignore */ } }
+    }
+    const t = setTimeout(bring, 320)   // attende la comparsa della tastiera
+    const vv = window.visualViewport
+    vv?.addEventListener('resize', bring)
+    return () => { clearTimeout(t); vv?.removeEventListener('resize', bring) }
+  }, [editing])
+
   // aggiorna periodicamente i colori/etichette delle scadenze (una volta al minuto)
   useEffect(() => { const t = setInterval(() => setTick(n => n + 1), 60000); return () => clearInterval(t) }, [])
 
@@ -258,11 +273,19 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     const h = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo() }
-      // Ctrl+S = entra/esci dalla modalità selezione (blocca il "salva pagina" del browser)
+      // Ctrl+S = seleziona la SEZIONE della riga corrente (blocca il "salva pagina" del browser).
+      // Se già in selezione, estende la selezione alle sezioni delle righe scelte.
       else if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
         e.preventDefault()
-        if (selectMode) exitSelect()
-        else { setSelectMode(true); setEditing(null) }
+        if (selectMode) {
+          if (selected.size) expandToSection()
+          else exitSelect()
+        } else {
+          const id = editing || lastEdit.current
+          const b = id ? blocks.find(x => x.id === id) : null
+          setEditing(null); setSelectMode(true)
+          setSelected(b ? sectionIdsOf(b) : new Set())
+        }
       }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && selectMode && selected.size) {
         const tag = document.activeElement?.tagName
@@ -539,6 +562,54 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     setTimeout(() => setFlash(null), 700)
   }
 
+  // ---- Stampa foglio: struttura ad albero, formato eco (nero su bianco, poco inchiostro) ----
+  const printSheet = () => {
+    const esc = (s) => (s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+    const plain = (s) => (s || '')
+      .replace(/\*\*/g, '').replace(/\^\^/g, '').replace(/`/g, '')
+      .replace(/\(\(([^)]+)\)\)/g, '$1').replace(/\[\[([^\]]+)\]\]/g, '$1')
+      .replace(/^\*|\*$/g, '')
+    const rowsHtml = blocks.map(b => {
+      const lvl = Math.min(b.indent || 0, MAX_INDENT)
+      const hl = headingLevel(b.text)
+      if ((b.text || '').trim() === '---') return '<hr class="d">'
+      let txt = b.text || ''
+      if (hl > 0) txt = txt.replace(/^#{1,6}\s/, '')
+      if (txt.startsWith('=') && txt.length > 1) {
+        const r = evalFormula(txt.slice(1))
+        if (r !== null) txt = `${txt} = ${r}`
+      }
+      txt = plain(txt)
+      const due = b.due ? ` <span class="due">— scad. ${esc(b.due)}</span>` : ''
+      const branch = lvl ? '<span class="br">└ </span>' : ''
+      const cls = 'r' + (hl ? ' h h' + hl : '')
+      return `<div class="${cls}" style="margin-left:${lvl * 16}px">${branch}${esc(txt) || '·'}${due}</div>`
+    }).join('')
+    const html = `<!doctype html><html lang="it"><head><meta charset="utf-8">
+<title>${esc(title || 'Vista')}</title>
+<style>
+  @page { margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { font: 12.5px/1.5 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color:#000; background:#fff; margin:0; }
+  h1.t { font-size: 19px; margin: 0 0 12px; padding-bottom: 6px; border-bottom: 1.5px solid #000; }
+  .r { padding: 1.5px 0; }
+  .r.h { font-weight: 700; margin-top: 7px; }
+  .r.h1 { font-size: 15px; } .r.h2 { font-size: 14px; } .r.h3 { font-size: 13px; }
+  .br { color:#888; }
+  .due { color:#555; font-size: 11px; }
+  hr.d { border: none; border-top: 1px dashed #999; margin: 6px 0; }
+  .foot { margin-top: 16px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 10px; color:#666; }
+</style></head><body>
+<h1 class="t">${esc(title || 'Senza titolo')}</h1>
+${rowsHtml}
+<div class="foot">Arbora — stampato il ${new Date().toLocaleDateString('it-IT')}</div>
+</body></html>`
+    const w = window.open('', '_blank')
+    if (!w) { setToast('Consenti i popup per stampare'); setTimeout(() => setToast(''), 1800); return }
+    w.document.write(html); w.document.close(); w.focus()
+    setTimeout(() => { try { w.print() } catch { /* ignore */ } }, 300)
+  }
+
   const copySheet = () => {
     const text = blocks.map(b => '  '.repeat(b.indent || 0) + b.text).join('\n')
     navigator.clipboard?.writeText(text).catch(() => {})
@@ -731,7 +802,24 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   }
   const onDragOver = (e, id) => { e.preventDefault(); if (id !== dropId) setDropId(id) }
 
+  // sposta TUTTE le righe selezionate (nell'ordine attuale) subito prima della riga bersaglio
+  const moveSelectedTo = (targetId) => {
+    if (!selected.size || selected.has(targetId)) return
+    const moving = blocks.filter(b => selected.has(b.id))
+    const rest = blocks.filter(b => !selected.has(b.id))
+    let to = rest.findIndex(b => b.id === targetId)
+    if (to === -1) to = rest.length
+    const next = [...rest.slice(0, to), ...moving, ...rest.slice(to)]
+    commit(next)
+  }
+
   const applyDrag = (targetId, clientX) => {
+    // se stiamo trascinando una riga che fa parte di una selezione multipla,
+    // spostiamo insieme tutte le righe selezionate
+    if (selectMode && selected.size && selected.has(dragId)) {
+      moveSelectedTo(targetId)
+      return
+    }
     const stepDelta = Math.round((clientX - dragStartX.current) / INDENT_STEP)
     let next = [...blocks]
     if (dragId !== targetId) {
@@ -1014,6 +1102,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           {!selectMode ? (
             <>
               <button className="pillbtn" title="Copia tutto il foglio" onClick={copySheet}>⧉ Copia foglio</button>
+              <button className="pillbtn" title="Stampa la vista (struttura ad albero, formato eco)" onClick={printSheet}>🖨 Stampa</button>
               <button className="pillbtn" title="Seleziona righe per copiarle/tagliarle/ri-tabularle" onClick={() => { setSelectMode(true); setEditing(null) }}>☑ Seleziona</button>
               {clipCount > 0 && (
                 <button className="pillbtn" title="Incolla la sezione copiata in fondo alla vista" onClick={pasteSection}>📌 Incolla ({clipCount})</button>
@@ -1039,27 +1128,21 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
       </div>
 
-      {/* Suggerimenti di collegamento: FUORI dal gruppo ancorato (.editor-sticky) così su
-          mobile non finiscono più coperti dalle barre strumenti/selezione fisse in alto. */}
-      {suggestions.length > 0 && (
-        <div className="link-suggest">
-          <span className="link-suggest-lbl">Collega a:</span>
-          {suggestions.map(name => (
-            <button key={name} className="link-suggest-chip" onClick={() => applyLink(name)}>🔗 {name}</button>
-          ))}
-        </div>
-      )}
+      {/* I suggerimenti di collegamento sono ora ancorati sotto la riga in modifica
+          (dentro .row-edit), così non finiscono più coperti dall'header/barre in alto. */}
 
       {!focusMode && (
         <div className="link-hint">
           <ul className="hint-list">
-            <li><b>Click</b> riga = modifica · <b>doppio</b> = copia · <b>triplo</b> = selezione · <b>rotellina</b> = nuova riga sotto</li>
-            <li><b>＋</b> nuova riga · <b>⌫</b> svuota · <b>🗑</b> elimina (7 gg) · <b>🖼</b> allega immagine</li>
-            <li><b>Invio</b> nuova riga · <b>Tab</b>/<b>⇧Tab</b> nidifica · trascina ←/→ · <code>Esc</code> chiudi vista</li>
-            <li><code>Ctrl+B</code> grassetto · <code>Ctrl+I</code> corsivo · <code>Ctrl+M</code> MAIUSCOLO · <code>Ctrl+D</code> scadenza · <code>Ctrl+Z</code>/<code>Ctrl+Y</code> annulla/ripeti</li>
-            <li><b>☑ Seleziona</b> → <code>Ctrl+C</code>/<code>Ctrl+X</code>/<code>Ctrl+A</code> · <code>Tab</code> rientro · <code>Canc</code> elimina · <code>Backspace</code> svuota · <code>Shift+click</code> sezione · <code>Esc</code> esci</li>
-            <li><b>📅</b> scadenza riga (sfondo colorato + countdown) · <b>AA</b>/<code>Ctrl+M</code> MAIUSCOLO</li>
-            <li><b>🔍</b> cerca (o scrivi per cercare) · <b>🔗</b> collega vista · swipe ←/→ cambia vista</li>
+            <li><b className="hint-cat">Righe</b> <b>Click</b> = modifica · <b>doppio</b> = copia · <b>triplo</b> = selezione · <b>rotellina</b> = nuova riga sotto · <b>Invio</b> nuova riga · frecce <code>↑</code>/<code>↓</code> vai alla riga sopra/sotto</li>
+            <li><b className="hint-cat">Nidificazione</b> <b>Tab</b>/<b>⇧Tab</b> rientra/riduci · trascina ←/→ · su mobile tieni premuto e sposta</li>
+            <li><b className="hint-cat">Testo</b> <code>Ctrl+B</code> grassetto · <code>Ctrl+I</code> corsivo · <code>Ctrl+M</code>/<b>AA</b> MAIUSCOLO · <code>/</code> scorciatoie data/ora</li>
+            <li><b className="hint-cat">Formule</b> inizia una riga con <code>=</code> per calcolare (es. <code>=2+3*4</code>, <code>=min(5,8)</code>, <code>=sqrt(9)</code>)</li>
+            <li><b className="hint-cat">Scadenze</b> <b>📅</b> o <code>Ctrl+D</code> imposta scadenza (sfondo colorato + countdown)</li>
+            <li><b className="hint-cat">Azioni riga</b> <b>＋</b> nuova · <b>⌫</b> svuota · <b>🗑</b> elimina (recupero 7 gg) · <b>🖼</b> immagine · su mobile: menu <b>⋮</b></li>
+            <li><b className="hint-cat">Selezione</b> <code>Ctrl+S</code> o <b>☑</b> · <code>Ctrl+A</code> tutte · <code>Shift+click</code> sezione · trascina per spostare tutte · <code>Ctrl+C</code>/<code>Ctrl+X</code> · <code>Tab</code> rientro · <code>Canc</code>/<code>Backspace</code></li>
+            <li><b className="hint-cat">Foglio</b> <b>⧉ Copia</b> · <b>🖨 Stampa</b> (ad albero, eco) · <b>🗑 Cestino</b></li>
+            <li><b className="hint-cat">Navigazione</b> <b>🔍</b> cerca (o scrivi) · <b>🔗</b> collega vista · swipe ←/→ cambia vista · <code>Esc</code> chiudi</li>
           </ul>
         </div>
       )}
@@ -1103,7 +1186,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
         return (
         <div key={b.id} data-block-id={b.id} data-noswipe=""
           className={'block' + (dragId === b.id ? ' dragging' : '') + (dropId === b.id ? ' drop-target' : '') + (indent ? ' nested' : '') + (isSel ? ' selected' : '') + (editing === b.id ? ' editing' : '') + (matchSet && !isHit ? ' search-dim' : '') + (isHit ? ' search-hit' : '') + (di ? ' ' + di.cls : '')}
-          draggable={editing !== b.id && !selectMode}
+          draggable={editing !== b.id && (!selectMode || selected.has(b.id))}
           onDragStart={e => onDragStart(e, b.id)}
           onDragOver={e => onDragOver(e, b.id)}
           onDrop={e => onDrop(e, b.id)}
@@ -1122,7 +1205,6 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
               onPointerDown={e => { e.preventDefault(); selDragOn(b.id) }}
               onPointerEnter={() => { if (selDrag.current) selDragEnter(b.id) }}>{isSel ? '✓' : ''}</span>
           )}
-          <span className="handle" title="Trascina · dx/sx per nidificare">⠿</span>
           {editing === b.id ? (
             <div className="row-edit" data-noswipe="">
             <textarea
@@ -1157,6 +1239,15 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
                 else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addBlock(b.id) }
                 else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditing(null) }
                 else if (e.key === 'Backspace' && b.text === '') { e.preventDefault(); deleteBlock(b.id) }
+                // frecce su/giù: se il cursore è al bordo della riga, salta alla riga adiacente
+                else if (e.key === 'ArrowUp' && el.selectionStart === 0 && el.selectionStart === el.selectionEnd) {
+                  const i = blocks.findIndex(x => x.id === b.id)
+                  if (i > 0) { e.preventDefault(); setEditing(blocks[i - 1].id) }
+                }
+                else if (e.key === 'ArrowDown' && el.selectionStart === el.value.length && el.selectionStart === el.selectionEnd) {
+                  const i = blocks.findIndex(x => x.id === b.id)
+                  if (i < blocks.length - 1) { e.preventDefault(); setEditing(blocks[i + 1].id) }
+                }
                 else if (e.key === 'Tab') { e.preventDefault(); const i = blocks.findIndex(x=>x.id===b.id); if (e.shiftKey) setIndent(b.id, Math.max(0,(b.indent||0)-1)); else setIndent(b.id, Math.min(maxIndentFor(blocks, i),(b.indent||0)+1)) }
               }} />
             {slash && slash.blockId === b.id && slashOptions().length > 0 && (
@@ -1169,6 +1260,15 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
                     <span className="slash-desc">{c.desc}</span>
                     <span className="slash-prev">{slashValue(c.key)}</span>
                   </button>
+                ))}
+              </div>
+            )}
+            {suggestions.length > 0 && (
+              <div className="link-suggest" data-noswipe="">
+                <span className="link-suggest-lbl">Collega a:</span>
+                {suggestions.map(name => (
+                  <button key={name} type="button" className="link-suggest-chip"
+                    onMouseDown={e => e.preventDefault()} onClick={() => applyLink(name)}>🔗 {name}</button>
                 ))}
               </div>
             )}
@@ -1195,7 +1295,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
           )}
           {di && (
             <span className={'due-badge ' + di.cls} title={'Scadenza: ' + b.due}
-              onClick={() => { if (!selectMode) setDuePick(p => p === b.id ? null : b.id) }}>⏰ {di.label}</span>
+              onClick={() => { if (!selectMode) setDuePick(b.id) }}>⏰ {di.label}</span>
           )}
           <span className={'copytap' + (flash === b.id ? ' copied-flash' : '')}>{flash === b.id ? 'copiato!' : ''}</span>
           {!selectMode && (
@@ -1209,23 +1309,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
                 <div className="due-wrap" data-noswipe="">
                   <button className={'iconbtn row-due' + (b.due ? ' has' : '') + (di ? ' ' + di.cls : '')}
                     title={b.due ? 'Scadenza: ' + b.due + ' — clicca per modificare' : 'Imposta una scadenza per questa riga'}
-                    onClick={() => setDuePick(p => p === b.id ? null : b.id)}>📅</button>
-                  {duePick === b.id && (
-                    <>
-                      <div className="due-scrim" onClick={() => setDuePick(null)} />
-                      <div className="due-pop" onClick={e => e.stopPropagation()}>
-                        <label className="due-pop-lbl">Scadenza</label>
-                        {/* alla scelta chiudiamo subito il popup: evita il "flicker" dovuto al
-                            re-render mentre il selettore nativo è ancora aperto */}
-                        <input type="date" className="due-input" value={b.due || ''}
-                          onChange={e => { setDue(b.id, e.target.value); setDuePick(null); setMenuId(null) }} />
-                        <div className="due-pop-row">
-                          {b.due && <button className="pillbtn danger" onClick={() => { setDue(b.id, ''); setDuePick(null); setMenuId(null) }}>Rimuovi</button>}
-                          <button className="pillbtn" onClick={() => { setDuePick(null); setMenuId(null) }}>Fatto</button>
-                        </div>
-                      </div>
-                    </>
-                  )}
+                    onClick={() => { setDuePick(b.id); setMenuId(null) }}>📅</button>
                 </div>
                 <button className="iconbtn row-img" title="Allega un'immagine a questa riga"
                   onClick={() => { openImagePicker(b.id); setMenuId(null) }} disabled={imgBusy}>🖼</button>
@@ -1250,6 +1334,25 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
       {/* input file nascosto per gli allegati immagine */}
       <input ref={imgInputRef} type="file" accept="image/*" style={{ display: 'none' }}
         onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; onImageChosen(f) }} />
+
+      {/* scadenza di una singola riga: modale centrato (niente sfarfallio di posizione) */}
+      {duePick && (() => {
+        const b = blocks.find(x => x.id === duePick)
+        if (!b) return null
+        return (
+          <div className="due-scrim due-scrim-center" onClick={() => setDuePick(null)}>
+            <div className="due-pop due-pop-center" onClick={e => e.stopPropagation()}>
+              <label className="due-pop-lbl">Scadenza</label>
+              <input type="date" className="due-input" autoFocus value={b.due || ''}
+                onChange={e => { setDue(b.id, e.target.value); setDuePick(null); setMenuId(null) }} />
+              <div className="due-pop-row">
+                {b.due && <button className="pillbtn danger" onClick={() => { setDue(b.id, ''); setDuePick(null); setMenuId(null) }}>Rimuovi</button>}
+                <button className="pillbtn" onClick={() => { setDuePick(null); setMenuId(null) }}>Fatto</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* scadenza per le righe selezionate (Ctrl+D in selezione) */}
       {bulkDue && (
