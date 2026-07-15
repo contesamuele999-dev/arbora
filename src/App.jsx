@@ -665,7 +665,7 @@ function EditorVistaSearch({ viste, visioni, current, onOpen }) {
       // apre SEMPRE e solo la vista evidenziata (mai crearne una nuova)
       e.preventDefault(); e.stopPropagation()
       const target = results[hi] || results[0]
-      if (target) pick(target)
+      if (target) pick(target.v)   // results contiene {v, sc, same}: passa la vista, non il wrapper
     }
     else if (e.key === 'Escape') { e.stopPropagation(); setQ(''); setOpen(false); e.currentTarget.blur() }
   }
