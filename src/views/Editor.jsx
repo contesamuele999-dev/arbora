@@ -278,11 +278,12 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
       else if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
         e.preventDefault()
         if (selectMode) {
+          // già in selezione: estende la selezione corrente alle intere sezioni
           if (selected.size) expandToSection()
-          else exitSelect()
         } else {
-          const id = editing || lastEdit.current
-          const b = id ? blocks.find(x => x.id === id) : null
+          // seleziona la sezione della SOLA riga in modifica (come il pulsante "⤵ Sezione");
+          // se non stai modificando nessuna riga entra in selezione vuota (niente "seleziona tutto")
+          const b = editing ? blocks.find(x => x.id === editing) : null
           setEditing(null); setSelectMode(true)
           setSelected(b ? sectionIdsOf(b) : new Set())
         }

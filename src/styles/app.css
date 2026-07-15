@@ -46,7 +46,9 @@ a { color: var(--accent); text-decoration: none; }
   padding: 10px 16px; background: rgba(20,30,24,.7);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; z-index: 20;
+  /* z-index sopra l'header ancorato dell'editor (.editor-sticky = 26), altrimenti il
+     menu a tendina "Vai a una vista" finisce dietro al titolo/barre strumenti. */
+  position: sticky; top: 0; z-index: 40;
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .3px; }
 .brand img, .brand-logo { width: 28px; height: 28px; }
@@ -70,7 +72,7 @@ a { color: var(--accent); text-decoration: none; }
 .editor-nav-input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--text); font-size: 13.5px; }
 .editor-nav-clear { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 6px; background: var(--bg-2); border: 1px solid var(--border); color: var(--text-dim); font-size: 11px; }
 .editor-nav-clear:hover { border-color: var(--green); color: var(--text); }
-.editor-nav-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 60; max-height: 62vh; overflow-y: auto;
+.editor-nav-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 80; max-height: 62vh; overflow-y: auto;
   background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
 .editor-nav-item { display: flex; flex-direction: column; gap: 1px; text-align: left; padding: 8px 10px; border-radius: 8px; background: transparent; color: var(--text); border: 1px solid transparent; }
 .editor-nav-item.hi { background: var(--bg-2); border-color: var(--green-deep); }

@@ -659,10 +659,15 @@ function EditorVistaSearch({ viste, visioni, current, onOpen }) {
 
   const pick = (v) => { if (!v) return; onOpen(v); setQ(''); setOpen(false) }
   const onKey = (e) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setHi(h => Math.min(results.length - 1, h + 1)) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => Math.max(0, h - 1)) }
-    else if (e.key === 'Enter') { e.preventDefault(); pick(results[hi]) }
-    else if (e.key === 'Escape') { setQ(''); setOpen(false); e.currentTarget.blur() }
+    if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setHi(h => Math.min(results.length - 1, h + 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setHi(h => Math.max(0, h - 1)) }
+    else if (e.key === 'Enter') {
+      // apre SEMPRE e solo la vista evidenziata (mai crearne una nuova)
+      e.preventDefault(); e.stopPropagation()
+      const target = results[hi] || results[0]
+      if (target) pick(target)
+    }
+    else if (e.key === 'Escape') { e.stopPropagation(); setQ(''); setOpen(false); e.currentTarget.blur() }
   }
 
   return (
