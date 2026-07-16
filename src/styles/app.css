@@ -710,27 +710,31 @@ a { color: var(--accent); text-decoration: none; }
    'line' = │ (passaggio) · 'tee' = ├ (ramo con fratelli sotto) · 'end' = └ (ultimo ramo). */
 .indent-guide {
   flex: 0 0 auto; width: 20px; align-self: stretch; position: relative;
-  color: var(--text-dim);
+  /* colore PIENO (senza alpha): dove i tratti di righe adiacenti si toccano non si
+     "sommano" in un colore più scuro → linee omogenee e uniformi */
+  --guide-stroke: color-mix(in srgb, var(--text-dim) 42%, var(--bg));
 }
-/* linea verticale continua di passaggio */
+/* linea verticale continua di passaggio. L'estensione (top/bottom negativi) supera
+   di poco i bordi della riga per colmare il margine: essendo il colore pieno, la
+   piccola sovrapposizione col tratto della riga vicina è invisibile. */
 .guide-line::before {
-  content: ''; position: absolute; left: 9px; top: -8px; bottom: -8px; width: 0;
-  border-left: 2px solid currentColor; opacity: .32;
+  content: ''; position: absolute; left: 9px; top: -9px; bottom: -9px; width: 0;
+  border-left: 2px solid var(--guide-stroke);
 }
 /* connettore intermedio ├ : verticale continua + ramo orizzontale verso il contenuto */
 .guide-tee::before {
-  content: ''; position: absolute; left: 9px; top: -8px; bottom: -8px; width: 0;
-  border-left: 2px solid currentColor; opacity: .42;
+  content: ''; position: absolute; left: 9px; top: -9px; bottom: -9px; width: 0;
+  border-left: 2px solid var(--guide-stroke);
 }
 .guide-tee::after {
   content: ''; position: absolute; left: 9px; top: 50%; width: 11px; height: 0;
-  border-top: 2px solid currentColor; opacity: .42;
+  border-top: 2px solid var(--guide-stroke);
 }
 /* connettore finale └ : verticale fino a metà riga + curva arrotondata verso il contenuto */
 .guide-end::before {
-  content: ''; position: absolute; left: 9px; top: -8px; height: calc(50% + 8px); width: 11px;
-  border-left: 2px solid currentColor; border-bottom: 2px solid currentColor;
-  border-bottom-left-radius: 8px; opacity: .5;
+  content: ''; position: absolute; left: 9px; top: -9px; height: calc(50% + 9px); width: 11px;
+  border-left: 2px solid var(--guide-stroke); border-bottom: 2px solid var(--guide-stroke);
+  border-bottom-left-radius: 8px;
 }
 /* 'space' non disegna nulla (ramo antenato già chiuso) */
 
