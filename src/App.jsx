@@ -5,6 +5,7 @@ import Auth from './pages/Auth.jsx'
 import Editor from './views/Editor.jsx'
 import Pipeline from './views/Pipeline.jsx'
 import Tree from './views/Tree.jsx'
+import Links from './views/Links.jsx'
 import Progress from './views/Progress.jsx'
 import Stats from './views/Stats.jsx'
 import Profile from './views/Profile.jsx'
@@ -20,6 +21,7 @@ import { cacheVistaLocal, markVistaSynced, mergeVisteWithCache, flushDirtyToClou
 const TABS = [
   { id: 'pipe', label: 'Pipe' },
   { id: 'tree', label: 'Tree' },
+  { id: 'links', label: 'Links' },
   { id: 'progress', label: 'Progress' },
 ]
 
@@ -524,6 +526,11 @@ export default function App() {
                   onReparent={reparent} onMoveToVisione={moveVistaToVisione} onQuickSave={saveVista}
                   onDeleteVista={deleteVista} />
               : <Empty msg="Crea una visione in Pipe per vedere l'albero." />
+          )}
+          {tab === 'links' && (
+            (viste.length)
+              ? <Links viste={visteConFasi} visioni={visioni} onOpen={setVistaAperta} />
+              : <Empty msg="Crea qualche vista e collegale con ((Nome vista)) per vedere la mappa." />
           )}
           {tab === 'progress' && (
             <Progress viste={visteConFasi} onOpen={setVistaAperta} onSetStage={setStage} />

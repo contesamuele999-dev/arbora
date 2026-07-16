@@ -240,7 +240,11 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     if (!dragId) return
     const onOver = (e) => { if (e.clientX || e.clientY) setGhost(g => g ? { ...g, x: e.clientX, y: e.clientY } : g) }
     document.addEventListener('dragover', onOver)
-    return () => document.removeEventListener('dragover', onOver)
+    // durante il trascinamento consenti di scorrere la lista con la rotellina del mouse
+    const scroller = rootRef.current?.closest('.content') || document.scrollingElement
+    const onWheel = (e) => { if (scroller) { e.preventDefault(); scroller.scrollTop += e.deltaY } }
+    window.addEventListener('wheel', onWheel, { passive: false })
+    return () => { document.removeEventListener('dragover', onOver); window.removeEventListener('wheel', onWheel) }
   }, [dragId])
 
   const pushUndo = (snapshot) => {
@@ -273,20 +277,11 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     const h = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo() }
-      // Ctrl+S = seleziona la SEZIONE della riga corrente (blocca il "salva pagina" del browser).
-      // Se già in selezione, estende la selezione alle sezioni delle righe scelte.
+      // Ctrl+S = ENTRA/ESCI dalla modalità selezione (blocca il "salva pagina" del browser).
       else if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
         e.preventDefault()
-        if (selectMode) {
-          // già in selezione: estende la selezione corrente alle intere sezioni
-          if (selected.size) expandToSection()
-        } else {
-          // seleziona la sezione della SOLA riga in modifica (come il pulsante "⤵ Sezione");
-          // se non stai modificando nessuna riga entra in selezione vuota (niente "seleziona tutto")
-          const b = editing ? blocks.find(x => x.id === editing) : null
-          setEditing(null); setSelectMode(true)
-          setSelected(b ? sectionIdsOf(b) : new Set())
-        }
+        if (selectMode) exitSelect()          // già in selezione → esci
+        else { setEditing(null); setSelectMode(true); setSelected(new Set()) }   // entra in selezione vuota
       }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && selectMode && selected.size) {
         const tag = document.activeElement?.tagName
@@ -859,7 +854,22 @@ ${rowsHtml}
 
   const onRowDown = (e, b) => {
     rowJustHandled.current = false
-    if (selectMode || editing === b.id || e.pointerType === 'mouse') return
+    if (editing === b.id) return
+    // In SELEZIONE: tenere premuto su una riga seleziona quella riga + tutti i rami
+    // nidificati (la sua sezione). Funziona sia con mouse sia con touch.
+    if (selectMode) {
+      const d = { id: b.id, sx: e.clientX, sy: e.clientY, sel: true, fired: false }
+      d.timer = setTimeout(() => {
+        d.fired = true
+        rowJustHandled.current = true   // impedisce che il click "toggli" la riga
+        const sec = sectionIdsOf(b)
+        setSelected(s => { const n = new Set(s); sec.forEach(id => n.add(id)); return n })
+        try { navigator.vibrate?.(12) } catch { /* ignore */ }
+      }, LONGPRESS_MS)
+      rowDrag.current = d
+      return
+    }
+    if (e.pointerType === 'mouse') return
     const el = e.currentTarget
     const d = {
       id: b.id, el, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY,
@@ -878,6 +888,11 @@ ${rowsHtml}
   const onRowMove = (e) => {
     const d = rowDrag.current
     if (!d) return
+    // long-press in selezione: se il dito/mouse si sposta troppo, annulla (era uno scroll o un drag)
+    if (d.sel) {
+      if (!d.fired && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 12) clearTimeout(d.timer)
+      return
+    }
     d.lastX = e.clientX; d.lastY = e.clientY
     if (!d.active) {
       // prima del long-press: se il dito si muove troppo è uno scroll/swipe → annulla il timer
@@ -895,6 +910,7 @@ ${rowsHtml}
     const d = rowDrag.current
     if (!d) return
     clearTimeout(d.timer); rowDrag.current = null
+    if (d.sel) return   // long-press in selezione: gestito dal timer; il click fa il toggle normale
     const dx = (e.clientX ?? d.lastX) - d.sx
     const dy = (e.clientY ?? d.lastY) - d.sy
     if (!d.active) {
@@ -1038,8 +1054,49 @@ ${rowsHtml}
   // auto-altezza della textarea: cresce col contenuto (anche con testo mandato a capo)
   const autosize = (el) => { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }
 
+  // ---- guide di nidificazione CONTINUE (stile albero: │ ├ └ ) ----
+  // Per ogni riga calcola, colonna per colonna, se disegnare una linea verticale di
+  // passaggio ('line'), niente ('space'), un connettore intermedio ('tee' = ├) o
+  // finale ('end' = └). Le linee dei livelli superiori proseguono senza interruzioni
+  // finché il ramo ha altri "fratelli" più in basso.
+  const guides = useMemo(() => {
+    const n = blocks.length
+    const depth = blocks.map(b => Math.min(b.indent || 0, MAX_INDENT))
+    const lastChild = new Array(n).fill(true)   // la riga è l'ultima del suo gruppo di fratelli?
+    for (let i = 0; i < n; i++) {
+      const d = depth[i]
+      for (let j = i + 1; j < n; j++) {
+        if (depth[j] < d) break
+        if (depth[j] === d) { lastChild[i] = false; break }
+      }
+    }
+    const out = new Array(n)
+    const stack = []   // stack[k] = indice dell'antenato al livello k
+    for (let i = 0; i < n; i++) {
+      const d = depth[i]
+      stack.length = d
+      const cols = []
+      for (let c = 0; c < d; c++) {
+        if (c === d - 1) cols.push(lastChild[i] ? 'end' : 'tee')
+        else { const anc = stack[c + 1]; cols.push(anc != null && !lastChild[anc] ? 'line' : 'space') }
+      }
+      out[i] = cols
+      stack[d] = i
+    }
+    return out
+  }, [blocks])
+
+  // Click "fuori" dalle righe mentre si è in selezione → esci dalla modalità selezione.
+  // (I click sulle righe e sulle barre-strumenti della selezione sono esclusi.)
+  const onEditorPointerDown = (e) => {
+    if (!selectMode) return
+    if (e.target.closest('.block') || e.target.closest('.editor-sticky') ||
+        e.target.closest('.view-search') || e.target.closest('.trash-panel')) return
+    exitSelect()
+  }
+
   return (
-    <div className="editor" ref={rootRef} tabIndex={-1}>
+    <div className="editor" ref={rootRef} tabIndex={-1} onPointerDown={onEditorPointerDown}>
       <div className="editor-sticky">
       <div className="editor-head">
         <input className="editor-title" value={title} placeholder="Titolo della vista…"
@@ -1141,7 +1198,7 @@ ${rowsHtml}
             <li><b className="hint-cat">Formule</b> inizia una riga con <code>=</code> per calcolare (es. <code>=2+3*4</code>, <code>=min(5,8)</code>, <code>=sqrt(9)</code>)</li>
             <li><b className="hint-cat">Scadenze</b> <b>📅</b> o <code>Ctrl+D</code> imposta scadenza (sfondo colorato + countdown)</li>
             <li><b className="hint-cat">Azioni riga</b> <b>＋</b> nuova · <b>⌫</b> svuota · <b>🗑</b> elimina (recupero 7 gg) · <b>🖼</b> immagine · su mobile: menu <b>⋮</b></li>
-            <li><b className="hint-cat">Selezione</b> <code>Ctrl+S</code> o <b>☑</b> · <code>Ctrl+A</code> tutte · <code>Shift+click</code> sezione · trascina per spostare tutte · <code>Ctrl+C</code>/<code>Ctrl+X</code> · <code>Tab</code> rientro · <code>Canc</code>/<code>Backspace</code></li>
+            <li><b className="hint-cat">Selezione</b> <code>Ctrl+S</code> entra/esci · <b>☑</b> · <code>Ctrl+A</code> tutte · <code>Shift+click</code> o <b>tieni premuto</b> = sezione · <b>click fuori</b> esci · trascina per spostare tutte · <code>Ctrl+C</code>/<code>Ctrl+X</code> · <code>Tab</code> rientro · <code>Canc</code> elimina · <code>Backspace</code> svuota</li>
             <li><b className="hint-cat">Foglio</b> <b>⧉ Copia</b> · <b>🖨 Stampa</b> (ad albero, eco) · <b>🗑 Cestino</b></li>
             <li><b className="hint-cat">Navigazione</b> <b>🔍</b> cerca (o scrivi) · <b>🔗</b> collega vista · swipe ←/→ cambia vista · <code>Esc</code> chiudi</li>
           </ul>
@@ -1179,7 +1236,7 @@ ${rowsHtml}
       </div>
 
       <div className="blocks-list" data-noswipe="">
-      {blocks.map(b => {
+      {blocks.map((b, bi) => {
         const indent = b.indent || 0
         const isSel = selected.has(b.id)
         const isHit = matchSet ? matchSet.has(b.id) : false
@@ -1193,13 +1250,10 @@ ${rowsHtml}
           onDrop={e => onDrop(e, b.id)}
           onDragEnd={endDrag}
         >
-          {/* guide di tabulazione: linee verticali sottili per i livelli superiori, una curva "╰─"
-              per l'ultimo livello (stile schema ad albero, disegnata coi bordi: niente glifi di
-              testo che finivano nascosti dietro la maniglia ⠿) */}
-          {Array.from({ length: indent }).map((_, i) => (
-            <span key={i} className={'indent-guide' + (i === indent - 1 ? ' indent-elbow' : '')}>
-              {i === indent - 1 && <span className="level-num" title={'Livello ' + indent}>{indent}</span>}
-            </span>
+          {/* guide di nidificazione CONTINUE: linee verticali che proseguono senza
+              interruzioni tra le righe, con connettori ad albero (│ ├ └) */}
+          {(guides[bi] || []).map((g, i) => (
+            <span key={i} className={'indent-guide guide-' + g} title={'Livello ' + indent} />
           ))}
           {selectMode && (
             <span className={'sel-box' + (isSel ? ' on' : '')} data-block-id={b.id}
