@@ -237,8 +237,8 @@ export default function Links({ viste = [], visioni = [], onOpen }) {
     <div className="links-wrap" ref={wrapRef}>
       <div className="links-bar" data-noswipe="">
         <span className="links-stat">{nodes.length} viste · {edges.length} collegamenti</span>
-        <button className={'pillbtn' + (showIsolated ? ' on' : '')} title="Mostra/nascondi le viste senza collegamenti"
-          onClick={() => setShowIsolated(s => !s)}>{showIsolated ? '👁 Isolate' : '🚫 Isolate'}</button>
+        <button className={'pillbtn' + (!showIsolated ? ' on' : '')} title="Mostra solo le viste collegate (nascondi quelle isolate)"
+          onClick={() => setShowIsolated(s => !s)}>{showIsolated ? '🔗 Solo link' : '👁 Solo link'}</button>
         <button className="pillbtn" title="Reimposta vista" onClick={resetView}>⌂ Centra</button>
       </div>
 

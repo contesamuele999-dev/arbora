@@ -279,6 +279,9 @@ a { color: var(--accent); text-decoration: none; }
 .block {
   position: relative; display: flex; gap: 8px; align-items: flex-start;
   padding: 6px 8px; border-radius: 10px; margin: 2px 0; transition: background .12s;
+  /* lo scrollIntoView (apertura modifica / tastiera mobile) lascia spazio sopra per
+     l'header ancorato coi modificatori, e un po' sotto per non finire sulla tastiera */
+  scroll-margin-top: 130px; scroll-margin-bottom: 40px;
 }
 .block:hover { background: var(--bg-2); }
 .block.dragging { opacity: .4; }
@@ -287,9 +290,12 @@ a { color: var(--accent); text-decoration: none; }
 .handle:active { cursor: grabbing; }
 .block .rendered { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.6; cursor: text; min-height: 1.6em; touch-action: pan-y; }
 .block textarea {
-  flex: 1; min-width: 0; background: var(--bg-2); border: 1px solid var(--green-deep); border-radius: 8px;
+  flex: 1; min-width: 0; width: 100%; background: var(--bg-2); border: 1px solid var(--green-deep); border-radius: 8px;
   color: var(--text); font: inherit; padding: 8px 10px; resize: vertical; overflow: hidden; outline: none;
   line-height: 1.6; min-height: 2.6em; box-sizing: border-box;
+  /* il testo va SEMPRE a capo: la casella cresce in altezza (autosize JS) e si vede
+     tutto quello che si scrive, senza scorrimento orizzontale */
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
 }
 .block .copytap { font-size: 11px; color: var(--text-dim); opacity: 0; transition: .15s; padding: 4px; }
 .block:hover .copytap { opacity: 1; }
@@ -515,6 +521,12 @@ a { color: var(--accent); text-decoration: none; }
 }
 .due-input:focus { border-color: var(--green); }
 .due-pop-row { display: flex; gap: 8px; justify-content: flex-end; }
+/* popup "copia riga / copia link": anteprima del link */
+.copy-choice-link {
+  font-size: 13px; color: var(--green-bright); background: var(--bg-2);
+  border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+}
 
 /* ---------- Pipe: pulsante "fissa in cima" (pin) ---------- */
 .pin-btn { opacity: .5; transition: opacity .12s, color .12s, filter .12s; filter: grayscale(1); }

@@ -36,6 +36,7 @@ export default function App() {
   const [viste, setViste] = useState([])
   const [links, setLinks] = useState([])
   const [vistaAperta, setVistaAperta] = useState(null)
+  const [vistaStack, setVistaStack] = useState([])   // storia delle viste aperte via link/ricerca (per il tasto ←)
   const [focusMode, setFocusMode] = useState(false)
   const [page, setPage] = useState(null)       // 'privacy' | 'terms' | 'profile' | 'stats'
   const [guide, setGuide] = useState(null)     // sezione della guida
@@ -80,7 +81,9 @@ export default function App() {
     guide && (() => setGuide(null)),
     menu && (() => setMenu(false)),
     page && (() => setPage(null)),
-    vistaAperta && (() => setVistaAperta(null)),
+    vistaAperta && (() => closeVista()),
+    // in Pipe con una ricerca attiva: il back cancella prima la ricerca (utile su tablet)
+    (!vistaAperta && !page && tab === 'pipe' && pipeQuery) && (() => setPipeQuery('')),
   ].filter(Boolean)
 
   useEffect(() => {
@@ -349,7 +352,23 @@ export default function App() {
         setLinks(ls => [...ls, lk])
       }
     }
+    // apertura via wikilink: registra la vista corrente per poter tornare indietro
+    if (vistaAperta && vistaAperta.id !== target.id) setVistaStack(s => [...s, vistaAperta])
     setVistaAperta(target)
+  }
+
+  // apre una vista partendo dall'elenco (Pipe/Tree/Links/Progress): azzera la storia
+  const openFromList = (v) => { setVistaStack([]); setVistaAperta(v) }
+  // naviga a un'altra vista da dentro l'editor (ricerca "vai a"): impila quella corrente
+  const pushVista = (v) => {
+    setVistaAperta(cur => { if (cur && cur.id !== v.id) setVistaStack(s => [...s, cur]); return v })
+  }
+  // tasto ← / back: se sei arrivato qui da un link torna alla vista precedente, altrimenti chiudi
+  const closeVista = () => {
+    setVistaStack(s => {
+      if (s.length) { setVistaAperta(s[s.length - 1]); return s.slice(0, -1) }
+      setVistaAperta(null); return s
+    })
   }
 
   const chooseTheme = (id) => { applyTheme(id); setTheme(id); }
@@ -470,14 +489,14 @@ export default function App() {
     return (
       <div className="app">
         <div className="topbar">
-          <button className="iconbtn" onClick={() => setVistaAperta(null)}>←</button>
+          <button className="iconbtn" title={vistaStack.length ? 'Torna alla vista precedente' : 'Chiudi'} onClick={closeVista}>←</button>
           <div className="brand editor-brand"><span>{visioni.find(v => v.id === vistaAperta.visione_id)?.titolo}</span></div>
-          <EditorVistaSearch viste={viste} visioni={visioni} current={vistaAperta} onOpen={setVistaAperta} />
+          <EditorVistaSearch viste={viste} visioni={visioni} current={vistaAperta} onOpen={pushVista} />
           <button className="iconbtn" title="Guida" onClick={() => setGuide('editor')}>?</button>
           <button className="iconbtn" title="Focus" onClick={() => setFocusMode(f => !f)}>{focusMode ? '🔅' : '🎯'}</button>
         </div>
         <div className="content" onTouchStart={onEditorTouchStart} onTouchMove={onEditorTouchMove} onTouchEnd={onEditorTouchEnd}>
-          <Editor key={vistaAperta.id} vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} onSetStage={setStage} onClose={() => setVistaAperta(null)} />
+          <Editor key={vistaAperta.id} vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} onSetStage={setStage} onClose={closeVista} />
         </div>
         <SwipeHint hint={swipeHint} />
         {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
@@ -511,7 +530,7 @@ export default function App() {
           {tab === 'pipe' && (
             <Pipeline visioni={visioni} viste={visteConFasi}
               query={pipeQuery} onQueryChange={setPipeQuery}
-              onOpen={setVistaAperta} onPreview={setPreview}
+              onOpen={openFromList} onPreview={setPreview}
               onAddVisione={addVisione} onAddVista={(visioneId) => addVista({ visioneId })}
               onRenameVisione={renameVisione} onRecolorVisione={recolorVisione}
               onDeleteVista={deleteVista} onDeleteVisione={deleteVisione}
@@ -520,7 +539,7 @@ export default function App() {
           )}
           {tab === 'tree' && (
             (visioni.length || viste.length)
-              ? <Tree viste={visteConFasi} visioni={visioni} onOpen={setVistaAperta}
+              ? <Tree viste={visteConFasi} visioni={visioni} onOpen={openFromList}
                   onAddChild={(parent) => addVista({ parent })}
                   onAddToVisione={(visioneId) => addVista({ visioneId })}
                   onReparent={reparent} onMoveToVisione={moveVistaToVisione} onQuickSave={saveVista}
@@ -529,11 +548,11 @@ export default function App() {
           )}
           {tab === 'links' && (
             (viste.length)
-              ? <Links viste={visteConFasi} visioni={visioni} onOpen={setVistaAperta} />
+              ? <Links viste={visteConFasi} visioni={visioni} onOpen={openFromList} />
               : <Empty msg="Crea qualche vista e collegale con ((Nome vista)) per vedere la mappa." />
           )}
           {tab === 'progress' && (
-            <Progress viste={visteConFasi} onOpen={setVistaAperta} onSetStage={setStage} />
+            <Progress viste={visteConFasi} onOpen={openFromList} onSetStage={setStage} />
           )}
         </div>
       </div>
@@ -593,7 +612,7 @@ export default function App() {
             </div>
             <div className="row">
               <button className="btn ghost" onClick={() => setPreview(null)}>Chiudi</button>
-              <button className="btn" onClick={() => { const p = preview; setPreview(null); setVistaAperta(p) }}>Apri e modifica ✎</button>
+              <button className="btn" onClick={() => { const p = preview; setPreview(null); openFromList(p) }}>Apri e modifica ✎</button>
             </div>
           </div>
         </div>

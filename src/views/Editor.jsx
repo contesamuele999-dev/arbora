@@ -116,7 +116,9 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const [, setTick] = useState(0)                      // ri-valuta le scadenze nel tempo (senza interazione)
   const [slash, setSlash] = useState(null)             // { blockId, start, query, sel } menu scorciatoie "/"
   const [menuId, setMenuId] = useState(null)           // id della riga con il menu azioni (⋮) aperto su mobile
+  const [copyChoice, setCopyChoice] = useState(null)   // { text, link } popup: copia riga intera o solo il link
   const editRef = useRef(null)                          // textarea della riga in modifica (per il caret dopo una scorciatoia)
+  const pendingCaret = useRef(null)                     // posizione del caret da applicare all'apertura della modifica (dove hai premuto)
   const searchRef = useRef(null)                       // input ricerca vista (per la digitazione libera)
   const imgInputRef = useRef(null)                     // input file nascosto per allegare immagini
   const imgTargetId = useRef(null)                     // riga a cui allegare l'immagine scelta
@@ -139,7 +141,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     if (!editing) return
     const bring = () => {
       const el = editRef.current
-      if (el) { try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }) } catch { /* ignore */ } }
+      if (el) { try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) } catch { /* ignore */ } }
     }
     const t = setTimeout(bring, 320)   // attende la comparsa della tastiera
     const vv = window.visualViewport
@@ -277,11 +279,14 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     const h = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo() }
-      // Ctrl+S = ENTRA/ESCI dalla modalità selezione (blocca il "salva pagina" del browser).
+      // Ctrl+S in selezione con righe di UNA sola sezione → seleziona tutta la sezione (escluso il padre);
+      // in selezione senza righe o su più sezioni → esci; fuori dalla selezione → entra in selezione vuota.
+      // (blocca sempre il "salva pagina" del browser.)
       else if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
         e.preventDefault()
-        if (selectMode) exitSelect()          // già in selezione → esci
-        else { setEditing(null); setSelectMode(true); setSelected(new Set()) }   // entra in selezione vuota
+        if (selectMode && selected.size && singleSectionParent()) selectSection()
+        else if (selectMode) exitSelect()
+        else { setEditing(null); setSelectMode(true); setSelected(new Set()) }
       }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && selectMode && selected.size) {
         const tag = document.activeElement?.tagName
@@ -552,10 +557,23 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const emptyTrash = () => { setTrash([]); persist(blocks, title, []) }
 
   // ---- copia (doppio click / doppio tap sul testo) ----
+  // link presente nella riga: URL http(s) oppure collegamento interno ((Nome)) / [[Nome]]
+  const linkInBlock = (t) => {
+    const url = (t || '').match(/https?:\/\/\S+/)
+    if (url) return url[0]
+    const wk = (t || '').match(/\(\(([^)]+)\)\)|\[\[([^\]]+)\]\]/)
+    if (wk) return (wk[1] || wk[2] || '').trim()
+    return null
+  }
+  const doCopyText = (text, flashId) => {
+    navigator.clipboard?.writeText(text || '').catch(() => {})
+    if (flashId) { setFlash(flashId); setTimeout(() => setFlash(null), 700) }
+  }
   const copyBlock = (b) => {
-    navigator.clipboard?.writeText(b.text).catch(() => {})
-    setFlash(b.id)
-    setTimeout(() => setFlash(null), 700)
+    const link = linkInBlock(b.text)
+    // se la riga contiene un link chiedi cosa copiare (riga intera o solo il link)
+    if (link) { setCopyChoice({ id: b.id, text: b.text, link }); return }
+    doCopyText(b.text, b.id)
   }
 
   // ---- Stampa foglio: struttura ad albero, formato eco (nero su bianco, poco inchiostro) ----
@@ -618,8 +636,29 @@ ${rowsHtml}
   // era la causa per cui doppio/triplo tocco aprivano solo la modifica).
   const tapRef = useRef({ id: null, n: 0 })
   const TAP_MS = 260
+  // offset di testo (nella riga renderizzata) sotto il punto x,y: serve per posizionare
+  // il caret dove hai premuto quando si apre la modifica.
+  const caretFromPoint = (x, y) => {
+    if (x == null || y == null) return null
+    try {
+      let node = null, offset = 0
+      if (document.caretRangeFromPoint) {
+        const r = document.caretRangeFromPoint(x, y); if (r) { node = r.startContainer; offset = r.startOffset }
+      } else if (document.caretPositionFromPoint) {
+        const p = document.caretPositionFromPoint(x, y); if (p) { node = p.offsetNode; offset = p.offset }
+      }
+      if (!node) return null
+      const host = (node.nodeType === 3 ? node.parentElement : node)?.closest?.('.rendered')
+      if (!host) return null
+      const range = document.createRange()
+      range.selectNodeContents(host)
+      range.setEnd(node, offset)
+      return range.toString().length
+    } catch { return null }
+  }
   const activateBlock = (b, e) => {
     if (rowJustHandled.current) { rowJustHandled.current = false; return }  // veniamo da un drag/swipe della riga
+    const cx = e?.clientX, cy = e?.clientY   // dove hai premuto (per il caret all'apertura)
     // Shift+click in selezione (da PC) = seleziona l'intera sezione (blocco + figli)
     if (selectMode && e?.shiftKey) {
       const sec = sectionIdsOf(b)
@@ -655,7 +694,7 @@ ${rowsHtml}
     const n = tr.n
     clickTimer.current = setTimeout(() => {
       clickTimer.current = null; tr.id = null; tr.n = 0
-      if (n === 1) setEditing(b.id)     // singolo = modifica
+      if (n === 1) { pendingCaret.current = caretFromPoint(cx, cy); setEditing(b.id) }   // singolo = modifica (caret dove hai premuto)
       else copyBlock(b)                 // doppio = copia
     }, TAP_MS)
   }
@@ -737,6 +776,35 @@ ${rowsHtml}
     })
     setSelected(ids)
   }
+  // Se la selezione è tutta dentro un'unica sezione, restituisce il ramo PADRE e la sua
+  // sezione (padre + discendenti). Serve per "seleziona tutta la sezione escluso il padre".
+  const singleSectionParent = () => {
+    const sel = selectedInOrder()
+    if (!sel.length) return null
+    const idxs = sel.map(b => blocks.findIndex(x => x.id === b.id))
+    const top = Math.min(...idxs)
+    const minIndent = Math.min(...sel.map(b => b.indent || 0))
+    let parent = null
+    for (let i = top - 1; i >= 0; i--) {
+      if (headingLevel(blocks[i].text) > 0) { parent = blocks[i]; break }
+      if ((blocks[i].indent || 0) < minIndent) { parent = blocks[i]; break }
+    }
+    if (!parent) return null
+    const sec = sectionIdsOf(parent)             // padre + discendenti
+    if (!sel.every(b => sec.has(b.id))) return null   // la selezione esce dalla sezione: non è "una sola sezione"
+    return { parent, sec }
+  }
+  // ⤵ Sezione / Ctrl+S: se la selezione è dentro una sola sezione, seleziona TUTTA la
+  // sezione escluso il ramo padre; altrimenti estende ogni riga alla propria sezione.
+  const selectSection = () => {
+    const info = singleSectionParent()
+    if (info) {
+      const ids = new Set(info.sec)
+      ids.delete(info.parent.id)                 // escludi il ramo padre
+      if (ids.size) { setSelected(ids); return }
+    }
+    expandToSection()
+  }
   const selectedInOrder = () => blocks.filter(b => selected.has(b.id))
   const asText = (arr) => arr.map(b => '  '.repeat(b.indent || 0) + b.text).join('\n')
   const putClip = (arr) => {
@@ -798,10 +866,18 @@ ${rowsHtml}
   }
   const onDragOver = (e, id) => { e.preventDefault(); if (id !== dropId) setDropId(id) }
 
-  // sposta TUTTE le righe selezionate (nell'ordine attuale) subito prima della riga bersaglio
-  const moveSelectedTo = (targetId) => {
+  // sposta TUTTE le righe selezionate (nell'ordine attuale) subito prima della riga bersaglio.
+  // `stepDelta` (dal trascinamento orizzontale) sposta il livello di rientro di tutte le
+  // righe spostate, mantenendone i rientri relativi → si può nidificare un gruppo trascinandolo a destra.
+  const moveSelectedTo = (targetId, stepDelta = 0) => {
     if (!selected.size || selected.has(targetId)) return
-    const moving = blocks.filter(b => selected.has(b.id))
+    let moving = blocks.filter(b => selected.has(b.id))
+    if (stepDelta) {
+      const minIndent = Math.min(...moving.map(b => b.indent || 0))
+      // non far scendere sotto 0 il rientro minimo del gruppo
+      const shift = Math.max(stepDelta, -minIndent)
+      moving = moving.map(b => ({ ...b, indent: Math.max(0, Math.min(MAX_INDENT, (b.indent || 0) + shift)) }))
+    }
     const rest = blocks.filter(b => !selected.has(b.id))
     let to = rest.findIndex(b => b.id === targetId)
     if (to === -1) to = rest.length
@@ -811,9 +887,10 @@ ${rowsHtml}
 
   const applyDrag = (targetId, clientX) => {
     // se stiamo trascinando una riga che fa parte di una selezione multipla,
-    // spostiamo insieme tutte le righe selezionate
+    // spostiamo insieme tutte le righe selezionate (con eventuale nidificazione orizzontale)
     if (selectMode && selected.size && selected.has(dragId)) {
-      moveSelectedTo(targetId)
+      const stepDelta = Math.round((clientX - dragStartX.current) / INDENT_STEP)
+      moveSelectedTo(targetId, stepDelta)
       return
     }
     const stepDelta = Math.round((clientX - dragStartX.current) / INDENT_STEP)
@@ -1171,7 +1248,7 @@ ${rowsHtml}
             <>
               <span className="sel-count">{selected.size} sel.</span>
               <button className="pillbtn" title="Seleziona tutte le righe" onClick={selectAll}>☑ Tutte</button>
-              <button className="pillbtn" title="Estendi alla sezione (blocco + figli)" onClick={expandToSection}>⤵ Sezione</button>
+              <button className="pillbtn" title="Seleziona tutta la sezione (escluso il ramo padre)" onClick={selectSection}>⤵ Sezione</button>
               <button className="pillbtn" title="Aumenta rientro" onClick={() => indentSelected(1)}>⇥</button>
               <button className="pillbtn" title="Riduci rientro" onClick={() => indentSelected(-1)}>⇤</button>
               <button className="pillbtn" title="Copia la sezione (mantiene i livelli)" onClick={copySection}>⧉ Copia</button>
@@ -1264,10 +1341,10 @@ ${rowsHtml}
             <div className="row-edit" data-noswipe="">
             <textarea
               className="row-input"
-              ref={el => { editRef.current = el; if (el) { autosize(el); if (document.activeElement !== el) el.focus({ preventScroll: true }) } }}
+              ref={el => { editRef.current = el; if (el) { autosize(el); if (document.activeElement !== el) el.focus({ preventScroll: true }); if (pendingCaret.current != null) { const p = Math.min(pendingCaret.current, el.value.length); try { el.selectionStart = el.selectionEnd = p } catch { /* ignore */ } pendingCaret.current = null } } }}
               value={b.text} rows={1}
-              onInput={e => autosize(e.target)}
-              onChange={e => { setText(b.id, e.target.value); detectSlash(b.id, e.target) }}
+              onInput={e => { autosize(e.target); try { e.target.scrollIntoView({ block: 'nearest' }) } catch { /* ignore */ } }}
+              onChange={e => { autosize(e.target); setText(b.id, e.target.value); detectSlash(b.id, e.target) }}
               onKeyUp={e => detectSlash(b.id, e.currentTarget)}
               onClick={e => detectSlash(b.id, e.currentTarget)}
               onBlur={() => { setEditing(null); setSlash(null) }}
@@ -1336,7 +1413,7 @@ ${rowsHtml}
               onAuxClick={e => { if (e.button === 1) { e.preventDefault(); addBlock(b.id) } }}
               onClick={e => activateBlock(b, e)}
               title="1 tocco: modifica · 2 tocchi: copia · 3 tocchi: selezione · rotellina: nuova riga sotto · tieni premuto per trascinare · swipe ←/→ per nidificare">
-              {b.text ? <RenderedBlock text={b.text} onWikilink={onWikilink} /> : <span style={{color:'var(--text-dim)'}}>Vuoto — clicca per scrivere</span>}
+              {b.text ? <RenderedBlock text={b.text} onWikilink={selectMode ? undefined : onWikilink} /> : <span style={{color:'var(--text-dim)'}}>Vuoto — clicca per scrivere</span>}
             </div>
           )}
           {b.imgs?.length > 0 && (
@@ -1419,6 +1496,20 @@ ${rowsHtml}
             <div className="due-pop-row">
               <button className="pillbtn danger" onClick={() => { setDueMany(''); setBulkDue(false) }}>Rimuovi</button>
               <button className="pillbtn" onClick={() => setBulkDue(false)}>Chiudi</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* doppio click su una riga con un link: scegli cosa copiare */}
+      {copyChoice && (
+        <div className="due-scrim due-scrim-center" onClick={() => setCopyChoice(null)}>
+          <div className="due-pop due-pop-center" onClick={e => e.stopPropagation()}>
+            <label className="due-pop-lbl">Cosa vuoi copiare?</label>
+            <div className="copy-choice-link" title={copyChoice.link}>🔗 {copyChoice.link}</div>
+            <div className="due-pop-row" style={{ flexDirection: 'column', gap: 8 }}>
+              <button className="pillbtn" onClick={() => { doCopyText(copyChoice.text, copyChoice.id); setCopyChoice(null); setToast('Riga copiata'); setTimeout(() => setToast(''), 1200) }}>⧉ Copia riga intera</button>
+              <button className="pillbtn" onClick={() => { doCopyText(copyChoice.link); setCopyChoice(null); setToast('Link copiato'); setTimeout(() => setToast(''), 1200) }}>🔗 Copia solo il link</button>
             </div>
           </div>
         </div>

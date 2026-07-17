@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { STAGES, stageOf } from '../lib/stages.js'
 
 // ============================================================
@@ -23,6 +23,9 @@ export default function Progress({ viste, onOpen, onSetStage }) {
     return (v.blocchi || []).map(b => b.text).join(' ').toLowerCase().includes(q)
   }
   const items = viste.filter(v => !v.is_template && matches(v))
+  // valori più recenti letti dentro gli handler di drag (che sono stabili)
+  const latest = useRef({ items, onOpen, onSetStage })
+  latest.current = { items, onOpen, onSetStage }
 
   // Auto-scroll orizzontale continuo mentre si trascina vicino ai bordi.
   useEffect(() => {
@@ -42,11 +45,10 @@ export default function Progress({ viste, onOpen, onSetStage }) {
     return el?.closest?.('.kcol')?.getAttribute('data-stage') || null
   }
 
-  const onCardDown = (e, id) => {
-    e.currentTarget.setPointerCapture?.(e.pointerId)
-    dragRef.current = { id, sx: e.clientX, sy: e.clientY, moved: false }
-  }
-  const onCardMove = (e) => {
+  // Drag basato su listener a livello WINDOW: più affidabile del pointer-capture,
+  // che a volte si perdeva (ri-render della card, elementi figli, ecc.) e faceva
+  // "saltare" il trascinamento. I listener si tolgono al rilascio.
+  const onCardMove = useCallback((e) => {
     const d = dragRef.current
     if (!d) return
     if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 8) return
@@ -59,15 +61,29 @@ export default function Progress({ viste, onOpen, onSetStage }) {
       else if (e.clientX > r.right - EDGE) autoScroll.current = 1
       else autoScroll.current = 0
     }
-    setDrag({ id: d.id, x: e.clientX, y: e.clientY, over: stageUnder(e.clientX, e.clientY) })
-  }
-  const onCardUp = () => {
+    d.over = stageUnder(e.clientX, e.clientY)
+    setDrag({ id: d.id, x: e.clientX, y: e.clientY, over: d.over })
+  }, [])
+  const onCardUp = useCallback(() => {
+    window.removeEventListener('pointermove', onCardMove)
+    window.removeEventListener('pointerup', onCardUp)
     const d = dragRef.current; dragRef.current = null
-    const info = drag; setDrag(null); autoScroll.current = 0
+    setDrag(null); autoScroll.current = 0
     if (!d) return
-    if (!d.moved) { const v = items.find(x => x.id === d.id); if (v) onOpen(v); return }
-    if (info?.over) onSetStage(d.id, info.over)
+    const { items: its, onOpen: open, onSetStage: setStage } = latest.current
+    if (!d.moved) { const v = its.find(x => x.id === d.id); if (v) open(v); return }
+    if (d.over) setStage(d.id, d.over)
+  }, [onCardMove])
+  const onCardDown = (e, id) => {
+    dragRef.current = { id, sx: e.clientX, sy: e.clientY, moved: false, over: null }
+    window.addEventListener('pointermove', onCardMove)
+    window.addEventListener('pointerup', onCardUp)
   }
+  // pulizia di sicurezza: se il componente si smonta durante un drag, togli i listener
+  useEffect(() => () => {
+    window.removeEventListener('pointermove', onCardMove)
+    window.removeEventListener('pointerup', onCardUp)
+  }, [onCardMove, onCardUp])
 
   return (
     <div className="progress-wrap">
@@ -98,9 +114,7 @@ export default function Progress({ viste, onOpen, onSetStage }) {
               <div className="kcol-body">
                 {col.map(v => (
                   <div key={v.id} className={'kcard' + (drag?.id === v.id ? ' kcard-drag' : '')} style={{ '--stage': s.color }}
-                    onPointerDown={e => onCardDown(e, v.id)}
-                    onPointerMove={onCardMove}
-                    onPointerUp={onCardUp}>
+                    onPointerDown={e => onCardDown(e, v.id)}>
                     <button className="stage-dot as-btn" title="Cambia fase"
                       onPointerDown={e => e.stopPropagation()}
                       onClick={e => { e.stopPropagation(); setPick(v) }} />
