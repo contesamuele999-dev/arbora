@@ -1217,14 +1217,16 @@ ${rowsHtml}
       {!focusMode && (
         <>
         <div className="toolbar" data-noswipe="" onPointerDown={e => e.preventDefault()} onMouseDown={e => e.preventDefault()}>
+          <button className={'iconbtn' + (showHints ? ' on' : '')} title="Mostra/nascondi i suggerimenti"
+            onClick={() => setShowHints(s => !s)}>?</button>
           <button className="iconbtn" title="Annulla (Ctrl+Z)" onClick={undo}>↶</button>
           <button className="iconbtn" title="Ripeti (Ctrl+Y)" onClick={redo}>↷</button>
+          <button className="iconbtn" title="Rientra (nidifica)" onClick={() => { const id = editing || lastEdit.current; if (!id) return; const i = blocks.findIndex(b=>b.id===id); setIndent(id, Math.min(maxIndentFor(blocks, i), (blocks[i].indent||0)+1)) }}>⇥</button>
+          <button className="iconbtn" title="Riduci rientro" onClick={() => { const id = editing || lastEdit.current; if (!id) return; const b = blocks.find(x=>x.id===id); setIndent(id, Math.max(0,(b.indent||0)-1)) }}>⇤</button>
           <button className="iconbtn" title="Titolo" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, '# ' + (blocks.find(b=>b.id===id)?.text||'')) }}>H</button>
           <button className="iconbtn" title="Grassetto (Ctrl+B)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '**testo**') }}><b>B</b></button>
           <button className="iconbtn" title="Corsivo (Ctrl+I)" onClick={() => { const id = editing || lastEdit.current; if (id) setText(id, (blocks.find(b=>b.id===id)?.text||'') + '*testo*') }}><i>c</i></button>
           <button className="iconbtn" title="MAIUSCOLO — trasforma in maiuscolo il testo selezionato (o l'intera riga)" onClick={upperActive}><span style={{fontSize:'12px',fontWeight:800,letterSpacing:'.5px'}}>AA</span></button>
-          <button className="iconbtn" title="Rientra (nidifica)" onClick={() => { const id = editing || lastEdit.current; if (!id) return; const i = blocks.findIndex(b=>b.id===id); setIndent(id, Math.min(maxIndentFor(blocks, i), (blocks[i].indent||0)+1)) }}>⇥</button>
-          <button className="iconbtn" title="Riduci rientro" onClick={() => { const id = editing || lastEdit.current; if (!id) return; const b = blocks.find(x=>x.id===id); setIndent(id, Math.max(0,(b.indent||0)-1)) }}>⇤</button>
           <button className="iconbtn" title="Inserisci collegamento a un'altra vista" onClick={() => {
             const id = editing || lastEdit.current || (blocks[0] && blocks[0].id)
             if (!id) return
@@ -1232,8 +1234,6 @@ ${rowsHtml}
             const t = blocks.find(b=>b.id===id)?.text || ''
             setText(id, t + (t && !t.endsWith(' ') ? ' ' : '') + '((Nome della vista))')
           }}>🔗</button>
-          <button className={'iconbtn' + (showHints ? ' on' : '')} title="Mostra/nascondi i suggerimenti"
-            onClick={() => setShowHints(s => !s)}>?</button>
         </div>
 
         {/* Riga azioni: copia foglio · selezione · incolla · cestino */}
