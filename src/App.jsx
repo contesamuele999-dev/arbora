@@ -72,6 +72,13 @@ export default function App() {
   useEffect(() => { setTheme(loadTheme()) }, [])
   useEffect(() => { if (user) reload() }, [user, reload])
 
+  // ripristina lo scroll di Pipe quando si chiude una vista e si torna all'elenco
+  useLayoutEffect(() => {
+    if (!vistaAperta && !page && tab === 'pipe' && contentRef.current) {
+      contentRef.current.scrollTop = pipeScrollRef.current
+    }
+  }, [vistaAperta, page, tab])
+
   // ---- tasto INDIETRO (mobile): chiude l'overlay in cima invece di uscire dall'app ----
   const overlaysRef = useRef([])
   overlaysRef.current = [
@@ -365,13 +372,6 @@ export default function App() {
     if (tab === 'pipe' && contentRef.current) pipeScrollRef.current = contentRef.current.scrollTop
     setVistaStack([]); setVistaAperta(v)
   }
-
-  // ripristina lo scroll di Pipe quando si chiude una vista e si torna all'elenco
-  useLayoutEffect(() => {
-    if (!vistaAperta && !page && tab === 'pipe' && contentRef.current) {
-      contentRef.current.scrollTop = pipeScrollRef.current
-    }
-  }, [vistaAperta, page, tab])
   // naviga a un'altra vista da dentro l'editor (ricerca "vai a"): impila quella corrente
   const pushVista = (v) => {
     setVistaAperta(cur => { if (cur && cur.id !== v.id) setVistaStack(s => [...s, cur]); return v })
