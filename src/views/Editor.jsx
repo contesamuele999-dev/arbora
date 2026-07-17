@@ -1177,6 +1177,7 @@ ${rowsHtml}
       <div className="editor-sticky">
       <div className="editor-head">
         <input className="editor-title" value={title} placeholder="Titolo della vista…"
+          size={Math.min(Math.max((title.length || 18) + 1, 4), 38)}
           onChange={e => titleChange(e.target.value)} />
         {onSetStage && (
           <div className="stage-pick-wrap">
