@@ -106,6 +106,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
   const [showTrash, setShowTrash] = useState(false)
+  const [showHints, setShowHints] = useState(false)   // pannello suggerimenti (aperto/chiuso col pulsante ?)
   const [saveState, setSaveState] = useState('idle')   // idle | saving | saved | local
   const [clipCount, setClipCount] = useState(SECTION_CLIP.length)
   const [search, setSearch] = useState('')             // ricerca fra le righe DENTRO questa vista
@@ -1205,10 +1206,11 @@ ${rowsHtml}
         <span className={'save-state ' + saveState} title={
           saveState === 'saved' ? 'Salvato nel cloud' :
           saveState === 'local' ? 'Salvato su questo dispositivo (cloud non raggiungibile)' :
-          saveState === 'saving' ? 'Salvataggio…' : ''}>
+          saveState === 'saving' ? 'Salvataggio…' : 'Nessuna modifica'}>
           {saveState === 'saving' && '⏳'}
           {saveState === 'saved' && '☁'}
           {saveState === 'local' && '💾'}
+          {saveState === 'idle' && '☁'}
         </span>
       </div>
 
@@ -1223,7 +1225,6 @@ ${rowsHtml}
           <button className="iconbtn" title="MAIUSCOLO — trasforma in maiuscolo il testo selezionato (o l'intera riga)" onClick={upperActive}><span style={{fontSize:'12px',fontWeight:800,letterSpacing:'.5px'}}>AA</span></button>
           <button className="iconbtn" title="Rientra (nidifica)" onClick={() => { const id = editing || lastEdit.current; if (!id) return; const i = blocks.findIndex(b=>b.id===id); setIndent(id, Math.min(maxIndentFor(blocks, i), (blocks[i].indent||0)+1)) }}>⇥</button>
           <button className="iconbtn" title="Riduci rientro" onClick={() => { const id = editing || lastEdit.current; if (!id) return; const b = blocks.find(x=>x.id===id); setIndent(id, Math.max(0,(b.indent||0)-1)) }}>⇤</button>
-          <button className="iconbtn" title="Sezione / divisore" onClick={() => addBlock(editing || lastEdit.current, '---')}>—</button>
           <button className="iconbtn" title="Inserisci collegamento a un'altra vista" onClick={() => {
             const id = editing || lastEdit.current || (blocks[0] && blocks[0].id)
             if (!id) return
@@ -1231,6 +1232,8 @@ ${rowsHtml}
             const t = blocks.find(b=>b.id===id)?.text || ''
             setText(id, t + (t && !t.endsWith(' ') ? ' ' : '') + '((Nome della vista))')
           }}>🔗</button>
+          <button className={'iconbtn' + (showHints ? ' on' : '')} title="Mostra/nascondi i suggerimenti"
+            onClick={() => setShowHints(s => !s)}>?</button>
         </div>
 
         {/* Riga azioni: copia foglio · selezione · incolla · cestino */}
@@ -1267,7 +1270,7 @@ ${rowsHtml}
       {/* I suggerimenti di collegamento sono ora ancorati sotto la riga in modifica
           (dentro .row-edit), così non finiscono più coperti dall'header/barre in alto. */}
 
-      {!focusMode && (
+      {!focusMode && showHints && (
         <div className="link-hint">
           <ul className="hint-list">
             <li className="grp"><b className="hint-cat">Righe</b> <span><b>Click</b> = modifica la riga</span></li>
