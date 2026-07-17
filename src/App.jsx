@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useAuth } from './lib/auth.jsx'
 import { store } from './lib/store.js'
 import Auth from './pages/Auth.jsx'
@@ -51,6 +51,8 @@ export default function App() {
   const defaultVita = useRef(null)
   const stageWarned = useRef(false)
   const pinWarned = useRef(false)
+  const contentRef = useRef(null)       // contenitore scrollabile delle schede (Pipe/Tree/…)
+  const pipeScrollRef = useRef(0)       // scroll di Pipe salvato all'apertura di una vista, ripristinato al ritorno
 
   const reload = useCallback(async () => {
     // resiliente: se una singola query fallisce non azzeriamo tutta l'app
@@ -357,8 +359,19 @@ export default function App() {
     setVistaAperta(target)
   }
 
-  // apre una vista partendo dall'elenco (Pipe/Tree/Links/Progress): azzera la storia
-  const openFromList = (v) => { setVistaStack([]); setVistaAperta(v) }
+  // apre una vista partendo dall'elenco (Pipe/Tree/Links/Progress): azzera la storia.
+  // Salva lo scroll di Pipe così, al ritorno, si riparte dallo stesso punto.
+  const openFromList = (v) => {
+    if (tab === 'pipe' && contentRef.current) pipeScrollRef.current = contentRef.current.scrollTop
+    setVistaStack([]); setVistaAperta(v)
+  }
+
+  // ripristina lo scroll di Pipe quando si chiude una vista e si torna all'elenco
+  useLayoutEffect(() => {
+    if (!vistaAperta && !page && tab === 'pipe' && contentRef.current) {
+      contentRef.current.scrollTop = pipeScrollRef.current
+    }
+  }, [vistaAperta, page, tab])
   // naviga a un'altra vista da dentro l'editor (ricerca "vai a"): impila quella corrente
   const pushVista = (v) => {
     setVistaAperta(cur => { if (cur && cur.id !== v.id) setVistaStack(s => [...s, cur]); return v })
@@ -525,7 +538,7 @@ export default function App() {
         <button className="iconbtn" onClick={() => setMenu(true)}>☰</button>
       </div>
 
-      <div className="content" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+      <div className="content" ref={contentRef} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
         <div key={tab} className={'tab-pane ' + (tabDir < 0 ? 'from-left' : tabDir > 0 ? 'from-right' : '')}>
           {tab === 'pipe' && (
             <Pipeline visioni={visioni} viste={visteConFasi}

@@ -1205,9 +1205,9 @@ ${rowsHtml}
           saveState === 'saved' ? 'Salvato nel cloud' :
           saveState === 'local' ? 'Salvato su questo dispositivo (cloud non raggiungibile)' :
           saveState === 'saving' ? 'Salvataggio…' : ''}>
-          {saveState === 'saving' && '⏳ Salvataggio…'}
-          {saveState === 'saved' && '☁ Salvato nel cloud'}
-          {saveState === 'local' && '💾 Solo su questo dispositivo'}
+          {saveState === 'saving' && '⏳'}
+          {saveState === 'saved' && '☁'}
+          {saveState === 'local' && '💾'}
         </span>
       </div>
 
@@ -1269,15 +1269,36 @@ ${rowsHtml}
       {!focusMode && (
         <div className="link-hint">
           <ul className="hint-list">
-            <li><b className="hint-cat">Righe</b> <b>Click</b> = modifica · <b>doppio</b> = copia · <b>triplo</b> = selezione · <b>rotellina</b> = nuova riga sotto · <b>Invio</b> nuova riga · frecce <code>↑</code>/<code>↓</code> vai alla riga sopra/sotto</li>
-            <li><b className="hint-cat">Nidificazione</b> <b>Tab</b>/<b>⇧Tab</b> rientra/riduci · trascina ←/→ · su mobile tieni premuto e sposta</li>
-            <li><b className="hint-cat">Testo</b> <code>Ctrl+B</code> grassetto · <code>Ctrl+I</code> corsivo · <code>Ctrl+M</code>/<b>AA</b> MAIUSCOLO · <code>/</code> scorciatoie data/ora</li>
-            <li><b className="hint-cat">Formule</b> inizia una riga con <code>=</code> per calcolare (es. <code>=2+3*4</code>, <code>=min(5,8)</code>, <code>=sqrt(9)</code>)</li>
-            <li><b className="hint-cat">Scadenze</b> <b>📅</b> o <code>Ctrl+D</code> imposta scadenza (sfondo colorato + countdown)</li>
-            <li><b className="hint-cat">Azioni riga</b> <b>＋</b> nuova · <b>⌫</b> svuota · <b>🗑</b> elimina (recupero 7 gg) · <b>🖼</b> immagine · su mobile: menu <b>⋮</b></li>
-            <li><b className="hint-cat">Selezione</b> <code>Ctrl+S</code> entra/esci · <b>☑</b> · <code>Ctrl+A</code> tutte · <code>Shift+click</code> o <b>tieni premuto</b> = sezione · <b>click fuori</b> esci · trascina per spostare tutte · <code>Ctrl+C</code>/<code>Ctrl+X</code> · <code>Tab</code> rientro · <code>Canc</code> elimina · <code>Backspace</code> svuota</li>
-            <li><b className="hint-cat">Foglio</b> <b>⧉ Copia</b> · <b>🖨 Stampa</b> (ad albero, eco) · <b>🗑 Cestino</b></li>
-            <li><b className="hint-cat">Navigazione</b> <b>🔍</b> cerca (o scrivi) · <b>🔗</b> collega vista · swipe ←/→ cambia vista · <code>Esc</code> chiudi</li>
+            <li className="grp"><b className="hint-cat">Righe</b> <span><b>Click</b> = modifica la riga</span></li>
+            <li><b className="hint-cat" /> <span><b>Doppio click</b> = copia la riga</span></li>
+            <li><b className="hint-cat" /> <span><b>Triplo click</b> = selezione</span></li>
+            <li><b className="hint-cat" /> <span><b>Rotellina</b> sulla riga = nuova riga sotto</span></li>
+            <li><b className="hint-cat" /> <span><b>Invio</b> = nuova riga · frecce <code>↑</code>/<code>↓</code> = riga sopra/sotto</span></li>
+
+            <li className="grp"><b className="hint-cat">Nidificazione</b> <span><code>Tab</code>/<code>⇧Tab</code> = rientra/riduci</span></li>
+            <li><b className="hint-cat" /> <span>Trascina ←/→ per nidificare</span></li>
+            <li><b className="hint-cat" /> <span>Su mobile: tieni premuto e sposta</span></li>
+
+            <li className="grp"><b className="hint-cat">Testo</b> <span><code>Ctrl+B</code> = grassetto · <code>Ctrl+I</code> = corsivo</span></li>
+            <li><b className="hint-cat" /> <span><code>Ctrl+M</code> o <b>AA</b> = MAIUSCOLO</span></li>
+            <li><b className="hint-cat" /> <span><code>/</code> = scorciatoie data/ora</span></li>
+
+            <li className="grp"><b className="hint-cat">Formule</b> <span>inizia con <code>=</code> per calcolare (es. <code>=2+3*4</code>, <code>=sqrt(9)</code>)</span></li>
+
+            <li className="grp"><b className="hint-cat">Scadenze</b> <span><b>📅</b> o <code>Ctrl+D</code> = scadenza (sfondo colorato + countdown)</span></li>
+
+            <li className="grp"><b className="hint-cat">Azioni riga</b> <span><b>＋</b> nuova · <b>⌫</b> svuota · <b>🗑</b> elimina (recupero 7 gg)</span></li>
+            <li><b className="hint-cat" /> <span><b>🖼</b> immagine · su mobile: menu <b>⋮</b></span></li>
+
+            <li className="grp"><b className="hint-cat">Selezione</b> <span><code>Ctrl+S</code> = entra/esci · <code>Ctrl+A</code> = tutte</span></li>
+            <li><b className="hint-cat" /> <span><code>Shift+click</code> o tieni premuto = sezione</span></li>
+            <li><b className="hint-cat" /> <span><code>Ctrl+C</code>/<code>Ctrl+X</code> = copia/taglia · <code>Tab</code> = rientro</span></li>
+            <li><b className="hint-cat" /> <span><code>Canc</code> = elimina · <code>Backspace</code> = svuota · click fuori = esci</span></li>
+
+            <li className="grp"><b className="hint-cat">Foglio</b> <span><b>⧉ Copia foglio</b> · <b>🖨 Stampa</b> · <b>🗑 Cestino</b></span></li>
+
+            <li className="grp"><b className="hint-cat">Navigazione</b> <span><b>🔍</b> cerca · <b>🔗</b> collega vista</span></li>
+            <li><b className="hint-cat" /> <span>Swipe ←/→ = cambia vista · <code>Esc</code> = chiudi</span></li>
           </ul>
         </div>
       )}
