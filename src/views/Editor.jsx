@@ -584,14 +584,14 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
       .replace(/\*\*/g, '').replace(/\^\^/g, '').replace(/`/g, '')
       .replace(/\(\(([^)]+)\)\)/g, '$1').replace(/\[\[([^\]]+)\]\]/g, '$1')
       .replace(/^\*|\*$/g, '')
-    const rowsHtml = blocks.map(b => {
+    const rowsHtml = blocks.map((b, bi) => {
       const lvl = Math.min(b.indent || 0, MAX_INDENT)
       const hl = headingLevel(b.text)
       if ((b.text || '').trim() === '---') return '<hr class="d">'
       let txt = b.text || ''
       if (hl > 0) txt = txt.replace(/^#{1,6}\s/, '')
       if (txt.startsWith('=') && txt.length > 1) {
-        const r = evalFormula(txt.slice(1))
+        const r = evalFormula(txt.slice(1), blocks, new Set([bi]))
         if (r !== null) txt = `${txt} = ${r}`
       }
       txt = plain(txt)
@@ -1287,7 +1287,7 @@ ${rowsHtml}
             <li><b className="hint-cat" /> <span><code>Ctrl+M</code> o <b>AA</b> = MAIUSCOLO</span></li>
             <li><b className="hint-cat" /> <span><code>/</code> = scorciatoie data/ora</span></li>
 
-            <li className="grp"><b className="hint-cat">Formule</b> <span>inizia con <code>=</code> per calcolare (es. <code>=2+3*4</code>, <code>=sqrt(9)</code>)</span></li>
+            <li className="grp"><b className="hint-cat">Formule</b> <span>inizia con <code>=</code> per calcolare (es. <code>=2+3*4</code>, <code>=sqrt(9)</code>). Richiama altre righe con <code>#n</code>: <code>=#1+#2</code> somma i valori delle righe 1 e 2</span></li>
 
             <li className="grp"><b className="hint-cat">Scadenze</b> <span><b>📅</b> o <code>Ctrl+D</code> = scadenza (sfondo colorato + countdown)</span></li>
 
@@ -1438,7 +1438,7 @@ ${rowsHtml}
               onAuxClick={e => { if (e.button === 1) { e.preventDefault(); addBlock(b.id) } }}
               onClick={e => activateBlock(b, e)}
               title="1 tocco: modifica · 2 tocchi: copia · 3 tocchi: selezione · rotellina: nuova riga sotto · tieni premuto per trascinare · swipe ←/→ per nidificare">
-              {b.text ? <RenderedBlock text={b.text} onWikilink={selectMode ? undefined : onWikilink} /> : <span style={{color:'var(--text-dim)'}}>Vuoto — clicca per scrivere</span>}
+              {b.text ? <RenderedBlock text={b.text} onWikilink={selectMode ? undefined : onWikilink} blocks={blocks} index={bi} /> : <span style={{color:'var(--text-dim)'}}>Vuoto — clicca per scrivere</span>}
             </div>
           )}
           {b.imgs?.length > 0 && (

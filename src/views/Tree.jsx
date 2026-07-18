@@ -263,7 +263,7 @@ function QuickEdit({ vista, onClose, onSave, onOpenFull, onDelete }) {
           <button className="iconbtn mini" title="Chiudi" onClick={close}>✕</button>
         </div>
         <div className="sheet-body">
-          {blocks.map(b => (
+          {blocks.map((b, bi) => (
             <div key={b.id} className="sheet-block">
               {editing === b.id ? (
                 <textarea autoFocus value={b.text} rows={Math.max(1, b.text.split('\n').length)}
@@ -272,7 +272,7 @@ function QuickEdit({ vista, onClose, onSave, onOpenFull, onDelete }) {
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addBlock() } }} />
               ) : (
                 <div className="rendered" onClick={() => setEditing(b.id)} style={{ marginLeft: (b.indent || 0) * 20 }}>
-                  {b.text ? <RenderedBlock text={b.text} /> : <span style={{ color: 'var(--text-dim)' }}>Vuoto — tocca per scrivere</span>}
+                  {b.text ? <RenderedBlock text={b.text} blocks={blocks} index={bi} /> : <span style={{ color: 'var(--text-dim)' }}>Vuoto — tocca per scrivere</span>}
                 </div>
               )}
               <button className="sheet-del" title="Elimina blocco" onClick={() => delBlock(b.id)}>✕</button>

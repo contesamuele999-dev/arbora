@@ -626,6 +626,17 @@ a { color: var(--accent); text-decoration: none; }
 .formula-eq { color: var(--text-dim); }
 .formula-res { color: var(--green-bright); font-size: 15px; }
 
+/* ---------- Link web (URL) dentro le righe ---------- */
+.weblink {
+  color: var(--text-dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--text-dim) 60%, transparent);
+  word-break: break-word;
+  cursor: pointer;
+}
+.weblink:hover { color: var(--text); text-decoration-color: currentColor; }
+
 /* ---------- Login: "Ricordami" ---------- */
 .remember-row {
   display: flex; align-items: center; gap: 8px; margin: 4px 0 10px;

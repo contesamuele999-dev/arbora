@@ -8,6 +8,58 @@ import { supabase, hasSupabase } from './supabase'
 
 const LS_KEY = 'arbora-demo-db'
 
+// ============================================================
+// Merge a 3 vie dei blocchi (sync multi-dispositivo)
+// Se lo stesso account modifica una vista da più dispositivi, l'ultimo
+// salvataggio non deve sovrascrivere le righe cambiate sull'altro dispositivo.
+//   base   = blocchi com'erano all'ultimo allineamento col cloud
+//   local  = blocchi modificati su QUESTO dispositivo
+//   remote = blocchi attualmente nel cloud (forse cambiati altrove)
+// Regola: si conservano le modifiche di entrambi. Per ogni riga (per id):
+//   - modificata solo di qua o solo di là -> vince la versione modificata
+//   - modificata da entrambi diversamente -> vince la locale (chi sta salvando)
+//   - cancellata di qua ma modificata di là (o viceversa) -> si tiene (niente perdite)
+// I riferimenti #n nelle formule restano coerenti perché si fondono per id
+// mantenendo l'ordine del dispositivo che salva.
+// ============================================================
+export function mergeBlocchi(base, local, remote) {
+  base = Array.isArray(base) ? base : []
+  local = Array.isArray(local) ? local : []
+  remote = Array.isArray(remote) ? remote : []
+  const byId = arr => { const m = new Map(); for (const b of arr) if (b && b.id != null) m.set(b.id, b); return m }
+  const bMap = byId(base), rMap = byId(remote)
+  const sig = b => JSON.stringify({ text: b.text || '', indent: b.indent || 0, due: b.due || null, imgs: b.imgs || [] })
+  const changed = (x, y) => !x || !y || sig(x) !== sig(y)
+
+  const result = []
+  const used = new Set()
+  // 1) ordine LOCALE come riferimento (è il dispositivo che sta salvando)
+  for (const lb of local) {
+    used.add(lb.id)
+    const bb = bMap.get(lb.id), rb = rMap.get(lb.id)
+    if (!rb) {
+      // assente nel cloud: nuova qui, oppure cancellata dal cloud
+      if (bb && !changed(bb, lb)) continue   // cancellata altrove e non toccata qui -> elimina
+      result.push(lb)                        // nuova qui, o modificata qui -> tieni
+      continue
+    }
+    const localEdited = changed(bb, lb)
+    const remoteEdited = changed(bb, rb)
+    if (localEdited) result.push(lb)          // locale modificata -> vince la locale
+    else if (remoteEdited) result.push(rb)    // solo remota modificata -> remota
+    else result.push(lb)                      // invariata
+  }
+  // 2) righe presenti nel cloud ma non in locale
+  for (const rb of remote) {
+    if (used.has(rb.id)) continue
+    const bb = bMap.get(rb.id)
+    if (!bb) { result.push(rb); continue }    // aggiunta su un altro dispositivo -> includi
+    if (changed(bb, rb)) result.push(rb)      // cancellata qui ma modificata altrove -> conserva
+    // altrimenti: cancellata qui e intatta altrove -> elimina
+  }
+  return result
+}
+
 function loadLocal() {
   try { return JSON.parse(localStorage.getItem(LS_KEY)) || seed() }
   catch { return seed() }
@@ -85,6 +137,26 @@ export const store = {
     db[table] = (db[table] || []).map(r => r.id === id ? { ...r, ...patch } : r)
     saveLocal(db)
     return db[table].find(r => r.id === id)
+  },
+
+  // Salva una vista fondendo i blocchi con la versione cloud corrente, così le
+  // modifiche fatte in contemporanea su un altro dispositivo non vengono perse.
+  // `base` = blocchi com'erano all'ultimo allineamento col cloud (per il merge a 3 vie).
+  // Ritorna la riga salvata (con i `blocchi` risultanti dal merge).
+  async updateVistaMerged(id, patch, base) {
+    if (!hasSupabase) return this.update('viste', id, patch)
+    let remote = null
+    try {
+      const { data } = await supabase.from('viste').select('blocchi').eq('id', id).single()
+      remote = data?.blocchi
+    } catch { /* se la lettura fallisce, si salva senza merge (best-effort) */ }
+    let finalPatch = patch
+    if (Array.isArray(remote) && Array.isArray(patch.blocchi)) {
+      finalPatch = { ...patch, blocchi: mergeBlocchi(base, patch.blocchi, remote) }
+    }
+    const { data, error } = await supabase.from('viste').update(finalPatch).eq('id', id).select().single()
+    if (error) throw error
+    return data
   },
 
   async remove(table, id) {

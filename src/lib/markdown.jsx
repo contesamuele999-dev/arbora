@@ -5,12 +5,54 @@
 // Supporta + - * / ( ) e le potenze con ^, più alcune funzioni (sqrt, round,
 // floor, ceil, abs, min, max, pow). La virgola è ammessa solo dentro le funzioni
 // (es. =min(3,5)); come separatore decimale usare il punto (es. =1.5*2).
+// Riferimenti ad altre righe (stile Excel): #1, #2 ... richiamano il VALORE
+// numerico della riga corrispondente (1 = prima riga). La riga referenziata può
+// essere un numero puro oppure a sua volta una formula. Es. =#1+#2, =#3*1.22.
 // Nessun eval arbitrario: si accettano solo cifre, operatori e i nomi funzione noti.
 const FORMULA_FNS = ['sqrt', 'round', 'floor', 'ceil', 'abs', 'min', 'max', 'pow']
-export function evalFormula(raw) {
+
+// Valore numerico "grezzo" del testo di una riga: numero puro (accetta la virgola
+// come separatore decimale) oppure null se non è un numero.
+function rawNumber(text) {
+  const s = (text || '').trim()
+  if (!s) return null
+  if (!/^[-+]?[0-9]+([.,][0-9]+)?$/.test(s)) return null
+  const n = Number(s.replace(',', '.'))
+  return isFinite(n) ? n : null
+}
+
+// Valore numerico della riga `index` (0-based) all'interno di `blocks`: se è una
+// formula la calcola (ricorsivamente), altrimenti la interpreta come numero.
+// `seen` traccia gli indici in corso di calcolo per bloccare i riferimenti circolari.
+function rowValue(blocks, index, seen) {
+  if (!blocks || index < 0 || index >= blocks.length) return null
+  if (seen.has(index)) return null // riferimento circolare -> non calcolabile
+  seen.add(index)
+  const t = (blocks[index]?.text || '').trim()
+  let v
+  if (t.startsWith('=') && t.length > 1) v = evalFormula(t.slice(1), blocks, seen)
+  else v = rawNumber(t)
+  seen.delete(index)
+  return v
+}
+
+// Calcola una formula. `blocks` (facoltativo) abilita i riferimenti #n; `seen`
+// serve alla ricorsione (guardia anti-ciclo) e di norma non va passato dall'esterno.
+export function evalFormula(raw, blocks, seen) {
   let e = (raw || '').trim()
   if (!e) return null
   e = e.replace(/×/g, '*').replace(/÷/g, '/').replace(/\^/g, '**')
+  // Riferimenti ad altre righe: #1, #2 ... sostituiti col loro valore numerico.
+  if (/#\d+/.test(e)) {
+    const s = seen || new Set()
+    let bad = false
+    e = e.replace(/#(\d+)/g, (_, n) => {
+      const v = rowValue(blocks, parseInt(n, 10) - 1, s)
+      if (v === null || !isFinite(v)) { bad = true; return '0' }
+      return '(' + v + ')'
+    })
+    if (bad) return null // una riga referenziata non è un numero valido
+  }
   // togliamo i nomi funzione noti, poi verifichiamo che resti solo aritmetica sicura
   const cleaned = e.replace(new RegExp('\\b(' + FORMULA_FNS.join('|') + ')\\b', 'g'), '')
   if (/[^0-9+\-*/().,%\s]/.test(cleaned)) return null
@@ -24,10 +66,10 @@ export function evalFormula(raw) {
 }
 
 export function renderInline(text) {
-  // gestisce **bold**, *italic*, `code`, ((collegamento)) e [[collegamento]]
+  // gestisce **bold**, *italic*, `code`, ((collegamento)), [[collegamento]] e i link web
   const parts = []
   let i = 0
-  const regex = /(\*\*[^*]+\*\*|\^\^[^^]+\^\^|\*[^*]+\*|`[^`]+`|\[\[[^\]]+\]\]|\(\([^)]+\)\))/g
+  const regex = /(\*\*[^*]+\*\*|\^\^[^^]+\^\^|\*[^*]+\*|`[^`]+`|\[\[[^\]]+\]\]|\(\([^)]+\)\)|https?:\/\/[^\s<]+|www\.[^\s<]+)/g
   let last = 0, m
   while ((m = regex.exec(text)) !== null) {
     if (m.index > last) parts.push(text.slice(last, m.index))
@@ -40,20 +82,33 @@ export function renderInline(text) {
       const name = tok.slice(2, -2)
       parts.push(<span key={i++} className="wikilink" data-link={name}>{name}</span>)
     }
+    else if (/^https?:\/\//.test(tok) || tok.startsWith('www.')) {
+      // stacca l'eventuale punteggiatura finale (così "…(vedi http://x.it)." resta pulito)
+      let url = tok, tail = ''
+      const punct = url.match(/[.,;:!?)\]]+$/)
+      if (punct) { tail = punct[0]; url = url.slice(0, -tail.length) }
+      const href = url.startsWith('http') ? url : 'https://' + url
+      parts.push(
+        <a key={i++} className="weblink" href={href} target="_blank" rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}>{url}</a>
+      )
+      if (tail) parts.push(tail)
+    }
     last = m.index + tok.length
   }
   if (last < text.length) parts.push(text.slice(last))
   return parts
 }
 
-export function RenderedBlock({ text, onWikilink }) {
+// `blocks` + `index` (facoltativi) abilitano i riferimenti #n dentro le formule.
+export function RenderedBlock({ text, onWikilink, blocks, index }) {
   const t = text || ''
   const click = (e) => {
     const link = e.target.getAttribute?.('data-link')
     if (link && onWikilink) { e.stopPropagation(); onWikilink(link) }
   }
   if (t.startsWith('=') && t.length > 1) {
-    const res = evalFormula(t.slice(1))
+    const res = evalFormula(t.slice(1), blocks, new Set(typeof index === 'number' ? [index] : []))
     if (res !== null) return (
       <div onClick={click} className="formula-block">
         <span className="formula-expr">{t}</span>

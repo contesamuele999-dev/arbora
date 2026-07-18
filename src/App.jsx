@@ -53,6 +53,7 @@ export default function App() {
   const pinWarned = useRef(false)
   const contentRef = useRef(null)       // contenitore scrollabile delle schede (Pipe/Tree/…)
   const pipeScrollRef = useRef(0)       // scroll di Pipe salvato all'apertura di una vista, ripristinato al ritorno
+  const baseBlocchi = useRef({})        // { vistaId: blocchi } = ultimo stato cloud noto, per il merge multi-dispositivo
 
   const reload = useCallback(async () => {
     // resiliente: se una singola query fallisce non azzeriamo tutta l'app
@@ -62,6 +63,8 @@ export default function App() {
     ])
     defaultVita.current = vt[0] || null
     setVisioni(vs)
+    // istantanea dello stato cloud: base per il merge a 3 vie al prossimo salvataggio
+    baseBlocchi.current = Object.fromEntries(allViste.map(v => [v.id, v.blocchi || []]))
     const merged = mergeVisteWithCache(allViste)   // ripristina modifiche locali non ancora confermate
     setViste(merged)
     const ids = new Set(merged.map(v => v.id))
@@ -280,18 +283,34 @@ export default function App() {
     const nowIso = new Date().toISOString()
     setViste(vs => vs.map(v => v.id === updated.id ? { ...v, ...updated, updated_at: nowIso } : v))
     setVistaAperta(va => (va && va.id === updated.id) ? { ...va, ...updated, updated_at: nowIso } : va)
-    // 3) salvataggio cloud (best-effort, con fallback se la colonna cestino non esiste)
+    // 3) salvataggio cloud con MERGE per riga: rilegge la versione cloud e fonde i
+    //    blocchi per id, così le modifiche fatte in contemporanea su un altro
+    //    dispositivo non vengono sovrascritte. (best-effort, fallback se manca `cestino`)
+    const base = baseBlocchi.current[updated.id]
     const patch = { titolo: updated.titolo, blocchi: updated.blocchi }
     if (updated.cestino !== undefined && !cestinoDisabled()) patch.cestino = updated.cestino
+    const applyMerged = (saved) => {
+      // allinea base + UI al risultato del merge (può contenere righe di un altro dispositivo)
+      const mb = saved?.blocchi
+      if (Array.isArray(mb)) {
+        baseBlocchi.current[updated.id] = mb
+        setViste(vs => vs.map(v => v.id === updated.id ? { ...v, blocchi: mb } : v))
+        setVistaAperta(va => (va && va.id === updated.id) ? { ...va, blocchi: mb } : va)
+      } else {
+        baseBlocchi.current[updated.id] = updated.blocchi
+      }
+    }
     try {
-      await store.update('viste', updated.id, patch)
+      const saved = await store.updateVistaMerged(updated.id, patch, base)
+      applyMerged(saved)
       markVistaSynced(updated.id)
       return 'cloud'
     } catch (e) {
       if (isMissingCestino(e) && updated.cestino !== undefined) {
         disableCestinoCloud()
         try {
-          await store.update('viste', updated.id, { titolo: updated.titolo, blocchi: updated.blocchi })
+          const saved = await store.updateVistaMerged(updated.id, { titolo: updated.titolo, blocchi: updated.blocchi }, base)
+          applyMerged(saved)
           markVistaSynced(updated.id)   // testo salvato; il cestino resta in cache locale
           return 'cloud'
         } catch (e2) { console.warn('Salvataggio cloud fallito (conservato in locale):', e2) }
@@ -616,9 +635,9 @@ export default function App() {
           <div className="modal preview-modal" onClick={e => e.stopPropagation()}>
             <h3>{preview.titolo || 'Senza titolo'}</h3>
             <div className="preview-body rendered">
-              {(preview.blocchi || []).map(b => (
+              {(preview.blocchi || []).map((b, bi) => (
                 <div key={b.id} className="preview-line" style={{ marginLeft: (b.indent || 0) * 18 }}>
-                  {b.text ? <RenderedBlock text={b.text} /> : ''}
+                  {b.text ? <RenderedBlock text={b.text} blocks={preview.blocchi} index={bi} /> : ''}
                 </div>
               ))}
               {!(preview.blocchi || []).length && <div style={{color:'var(--text-dim)'}}>Vista vuota.</div>}
