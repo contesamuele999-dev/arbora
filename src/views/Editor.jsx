@@ -102,6 +102,8 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const [dropId, setDropId] = useState(null)
   const [ghost, setGhost] = useState(null)         // { x, y, text } fantasma che segue il cursore
   const [flash, setFlash] = useState(null)
+  const [refFlash, setRefFlash] = useState(() => new Set())   // indici righe referenziate da #n (evidenziazione temporanea)
+  const refFlashTimer = useRef(null)
   const [toast, setToast] = useState('')
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
@@ -134,6 +136,9 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const rootRef = useRef(null)           // contenitore della vista: riceve il focus all'apertura
 
   useEffect(() => { if (editing) lastEdit.current = editing }, [editing])
+
+  // uscendo dall'editing togliamo l'evidenziazione delle righe referenziate
+  useEffect(() => { if (!editing) { clearTimeout(refFlashTimer.current); setRefFlash(s => s.size ? new Set() : s) } }, [editing])
 
   // Mobile: quando si apre la tastiera la riga in modifica può finire nascosta
   // (soprattutto se è fra le ultime). Portiamola sempre al centro dello schermo
@@ -372,6 +377,22 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const setText = (id, text) => {
     const next = blocks.map(b => b.id === id ? { ...b, text } : b)
     setBlocks(next); persist(next, title, trash)
+    flashRefs(text, next)
+  }
+
+  // Evidenzia temporaneamente le righe richiamate da #n mentre si scrive una formula.
+  const flashRefs = (text, arr = blocks) => {
+    const t = text || ''
+    if (!t.trim().startsWith('=')) { if (refFlash.size) setRefFlash(new Set()); return }
+    const s = new Set()
+    const re = /#(\d+)/g; let m
+    while ((m = re.exec(t)) !== null) {
+      const idx = parseInt(m[1], 10) - 1
+      if (idx >= 0 && idx < arr.length) s.add(idx)
+    }
+    setRefFlash(s)
+    clearTimeout(refFlashTimer.current)
+    if (s.size) refFlashTimer.current = setTimeout(() => setRefFlash(new Set()), 1400)
   }
 
   const setIndent = (id, indent) => {
@@ -1345,7 +1366,7 @@ ${rowsHtml}
         const di = b.due ? dueInfo(b.due) : null
         return (
         <div key={b.id} data-block-id={b.id} data-noswipe=""
-          className={'block' + (dragId === b.id ? ' dragging' : '') + (dropId === b.id ? ' drop-target' : '') + (indent ? ' nested' : '') + (isSel ? ' selected' : '') + (editing === b.id ? ' editing' : '') + (matchSet && !isHit ? ' search-dim' : '') + (isHit ? ' search-hit' : '') + (di ? ' ' + di.cls : '')}
+          className={'block' + (dragId === b.id ? ' dragging' : '') + (dropId === b.id ? ' drop-target' : '') + (indent ? ' nested' : '') + (isSel ? ' selected' : '') + (editing === b.id ? ' editing' : '') + (matchSet && !isHit ? ' search-dim' : '') + (isHit ? ' search-hit' : '') + (refFlash.has(bi) ? ' ref-flash' : '') + (di ? ' ' + di.cls : '')}
           draggable={editing !== b.id && (!selectMode || selected.has(b.id))}
           onDragStart={e => onDragStart(e, b.id)}
           onDragOver={e => onDragOver(e, b.id)}

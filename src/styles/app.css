@@ -626,6 +626,18 @@ a { color: var(--accent); text-decoration: none; }
 .formula-eq { color: var(--text-dim); }
 .formula-res { color: var(--green-bright); font-size: 15px; }
 
+/* Riga richiamata da un riferimento #n mentre si scrive la formula */
+.block.ref-flash {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--green-bright) 18%, transparent);
+  box-shadow: 0 0 0 2px var(--green-bright) inset;
+  animation: ref-flash-pulse 1.4s ease-out;
+}
+@keyframes ref-flash-pulse {
+  0%   { background: color-mix(in srgb, var(--green-bright) 38%, transparent); }
+  100% { background: color-mix(in srgb, var(--green-bright) 18%, transparent); }
+}
+
 /* ---------- Link web (URL) dentro le righe ---------- */
 .weblink {
   color: var(--text-dim);
