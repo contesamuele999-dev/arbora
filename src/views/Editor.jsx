@@ -5,6 +5,7 @@ import { cacheVistaLocal } from '../lib/localcache.js'
 import { STAGES, stageOf } from '../lib/stages.js'
 import { store } from '../lib/store.js'
 import { prepareImage } from '../lib/images.js'
+import * as gcal from '../lib/gcal.js'
 
 const uid = () => 'b-' + Math.random().toString(36).slice(2, 9)
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -176,16 +177,49 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jumpTo, vista.id])
 
+  // Scrive l'eventId di Google Calendar in una riga senza sporcare undo/redo.
+  const patchBlockGcal = (id, gcalId) => {
+    setBlocks(prev => {
+      const next = prev.map(b => b.id === id ? { ...b, gcal: gcalId || undefined } : b)
+      persist(next, title, trash)
+      return next
+    })
+  }
+
+  // Sincronizza la scadenza di una riga con Google Calendar (se collegato).
+  // Best-effort: non blocca l'UI, mostra solo un toast di esito.
+  // `prev` = riga com'era PRIMA della modifica (per recuperare l'eventId).
+  const syncDueToCalendar = async (prev, due) => {
+    if (!gcal.hasGoogleCalendar || !gcal.isConnected()) return
+    try {
+      if (!due) {
+        if (prev?.gcal) { await gcal.deleteEvent(prev.gcal); patchBlockGcal(prev.id, null) }
+        setToast('🗑 Rimosso da Google Calendar')
+      } else {
+        const eventId = await gcal.upsertEvent({ ...prev, due }, title)
+        patchBlockGcal(prev.id, eventId)
+        setToast('📅 Sincronizzato su Google Calendar')
+      }
+    } catch (e) {
+      setToast('⚠️ Calendar: ' + (e?.message || 'errore'))
+    }
+    setTimeout(() => setToast(''), 1800)
+  }
+
   // imposta o rimuove la scadenza di una riga ('' = rimuovi)
   const setDue = (id, due) => {
+    const prev = blocks.find(b => b.id === id)
     const next = blocks.map(b => b.id === id ? { ...b, due: due || undefined } : b)
     commit(next)
+    syncDueToCalendar(prev, due || '')
   }
   // imposta la stessa scadenza su tutte le righe selezionate ('' = rimuovi)
   const setDueMany = (due) => {
     if (!selected.size) return
+    const targets = blocks.filter(b => selected.has(b.id))
     const next = blocks.map(b => selected.has(b.id) ? { ...b, due: due || undefined } : b)
     commit(next)
+    targets.forEach(t => syncDueToCalendar(t, due || ''))
   }
 
   // Fallback per Safari e browser che non generano l'evento "paste" senza
@@ -1499,6 +1533,9 @@ ${rowsHtml}
           {di && (
             <span className={'due-badge ' + di.cls} title={'Scadenza: ' + b.due}
               onClick={() => { if (!selectMode) setDuePick(b.id) }}>⏰ {di.label}</span>
+          )}
+          {b.gcal && (
+            <span className="gcal-badge" title="Sincronizzato su Google Calendar">📅 sincronizzato</span>
           )}
           <span className={'copytap' + (flash === b.id ? ' copied-flash' : '')}>{flash === b.id ? 'copiato!' : ''}</span>
           {!selectMode && (

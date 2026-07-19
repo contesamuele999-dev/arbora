@@ -29,6 +29,7 @@ jobs:
           VITE_BASE: /arbora/
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build
       # SPA fallback: copia index.html in 404.html così il routing funziona
       - run: cp dist/index.html dist/404.html

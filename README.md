@@ -15,6 +15,7 @@ PWA installabile su PC, tablet e smartphone. React + Vite + Supabase, deploy su 
 - **Scheda Livelli** — trascina le viste per cambiare ramo/livello (con conferma).
 - **Modalità Focus + Pomodoro** — timer 25+5 editabile fino a 50+10, con suggerimenti di pausa.
 - **Login multi-utente** — ogni utente vede solo i propri dati (Supabase + Row Level Security).
+- **Google Calendar** — ogni utente collega il proprio account Google dal **Profilo**; le righe con scadenza si sincronizzano come eventi (create/aggiornate/eliminate insieme alla scadenza).
 - **Modalità DEMO** — senza Supabase l'app gira in locale (dati nel browser), utile per provarla subito.
 
 ---
@@ -46,12 +47,32 @@ Apri l'indirizzo mostrato. Senza configurare Supabase parte in **modalità DEMO*
 
 ---
 
+## Setup Google Calendar (opzionale)
+
+Permette a ogni utente di collegare il **proprio** account Google e sincronizzare le righe con scadenza. Tutto lato browser: nessun backend, compatibile con GitHub Pages.
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → crea/usa un progetto.
+2. **API e servizi → Libreria** → abilita **Google Calendar API**.
+3. **Credenziali → Crea credenziali → ID client OAuth** → tipo *Applicazione web*.
+4. In **Origini JavaScript autorizzate** aggiungi gli URL dell'app (es. `http://localhost:5173` e `https://<tuo-utente>.github.io`).
+5. Copia l'*ID client* nel `.env` (e come secret di GitHub Actions per la pubblicazione):
+
+   ```
+   VITE_GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
+   ```
+6. Nell'app: **Profilo → Google Calendar → Collega**. Poi ogni scadenza (📅) diventa un evento nel calendario dell'utente.
+
+> Finché la Google Calendar API è in modalità *Testing*, aggiungi gli utenti come *Test users* nella schermata di consenso OAuth (oppure pubblica l'app).
+
+---
+
 ## Pubblicazione su GitHub Pages
 
 1. Crea un repo su GitHub chiamato **`arbora`** e carica questa cartella.
 2. **Settings → Secrets and variables → Actions** → aggiungi:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_GOOGLE_CLIENT_ID` *(solo se usi Google Calendar)*
 3. **Settings → Pages** → *Source: GitHub Actions*.
 4. `git push` sul branch `main`: il workflow [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml) builda e pubblica.
 5. L'app sarà su `https://<tuo-utente>.github.io/arbora/`.

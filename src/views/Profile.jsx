@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../lib/auth.jsx'
+import * as gcal from '../lib/gcal.js'
 
 // Sezione Profilo: cambio email e password dell'account.
 export default function Profile() {
@@ -9,6 +10,26 @@ export default function Profile() {
   const [pw2, setPw2] = useState('')
   const [busy, setBusy] = useState('')
   const [msg, setMsg] = useState(null)   // { ok, text }
+  const [calOn, setCalOn] = useState(() => gcal.isConnected(user?.id))
+  const [calBusy, setCalBusy] = useState(false)
+
+  const linkCalendar = async () => {
+    setMsg(null); setCalBusy(true)
+    try {
+      await gcal.connect(user?.id)
+      setCalOn(true)
+      setMsg({ ok: true, text: 'Google Calendar collegato. Le righe con scadenza verranno sincronizzate.' })
+    } catch (e) {
+      setMsg({ ok: false, text: 'Collegamento non riuscito: ' + (e?.message || 'errore') })
+    } finally { setCalBusy(false) }
+  }
+
+  const unlinkCalendar = async () => {
+    setCalBusy(true)
+    try { await gcal.disconnect(user?.id) } catch { /* ignore */ }
+    setCalOn(false); setCalBusy(false)
+    setMsg({ ok: true, text: 'Google Calendar scollegato. Le nuove scadenze non verranno più sincronizzate.' })
+  }
 
   const saveEmail = async (e) => {
     e.preventDefault()
@@ -69,6 +90,34 @@ export default function Profile() {
           {busy === 'pw' ? '…' : 'Aggiorna password'}
         </button>
       </form>
+
+      <div className="profile-card">
+        <h3>Google Calendar</h3>
+        {!gcal.hasGoogleCalendar ? (
+          <p className="hint" style={{ margin: 0 }}>
+            Integrazione non configurata: imposta <code>VITE_GOOGLE_CLIENT_ID</code> per abilitare
+            il collegamento del calendario.
+          </p>
+        ) : (
+          <>
+            <p className="hint" style={{ marginTop: 0 }}>
+              Collega il tuo account Google per sincronizzare automaticamente le righe con scadenza
+              come eventi nel tuo calendario. {calOn
+                ? <b style={{ color: 'var(--ok, #1f7a4d)' }}>Collegato ✓</b>
+                : 'Non collegato.'}
+            </p>
+            {calOn ? (
+              <button className="btn danger" disabled={calBusy} onClick={unlinkCalendar}>
+                {calBusy ? '…' : 'Scollega'}
+              </button>
+            ) : (
+              <button className="btn" disabled={calBusy} onClick={linkCalendar}>
+                {calBusy ? '…' : 'Collega Google Calendar'}
+              </button>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
