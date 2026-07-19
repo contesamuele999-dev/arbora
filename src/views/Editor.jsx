@@ -92,7 +92,7 @@ function parseIndented(text, base = 0) {
 // Editor della singola VISTA: blocchi markdown, drag&drop (riordino + nidificazione),
 // click=modifica · doppio click=copia · icona cestino=elimina (con recupero 7 giorni),
 // selezione multipla + copia/taglia/incolla di sezioni intere, undo/redo.
-export default function Editor({ vista, onChange, onWikilink, focusMode, allViste = [], onSetStage, onClose }) {
+export default function Editor({ vista, onChange, onWikilink, focusMode, allViste = [], onSetStage, onClose, jumpTo }) {
   const [stagePick, setStagePick] = useState(false)
   const [blocks, setBlocks] = useState(vista.blocchi?.length ? vista.blocchi : [{ id: uid(), text: '' }])
   const [title, setTitle] = useState(vista.titolo || '')
@@ -114,6 +114,7 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
   const [search, setSearch] = useState('')             // ricerca fra le righe DENTRO questa vista
   const [duePick, setDuePick] = useState(null)         // id della riga di cui si sta impostando la scadenza
   const [bulkDue, setBulkDue] = useState(false)        // popup scadenza per le righe selezionate (Ctrl+D in selezione)
+  const [jumpId, setJumpId] = useState(null)           // riga a cui scrollare (arrivo da ricerca fra viste)
   const [lightbox, setLightbox] = useState(null)       // { blockId, i } immagine aperta a schermo intero
   const [imgBusy, setImgBusy] = useState(false)        // caricamento immagine in corso
   const [, setTick] = useState(0)                      // ri-valuta le scadenze nel tempo (senza interazione)
@@ -157,6 +158,23 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
 
   // aggiorna periodicamente i colori/etichette delle scadenze (una volta al minuto)
   useEffect(() => { const t = setInterval(() => setTick(n => n + 1), 60000); return () => clearInterval(t) }, [])
+
+  // Arrivo da una ricerca fra viste con match nel testo: scrolla (animato) alla
+  // prima riga che contiene il termine e la evidenzia per qualche secondo.
+  useEffect(() => {
+    const term = (jumpTo || '').trim().toLowerCase()
+    if (!term) return
+    const hit = blocks.find(b => (b.text || '').toLowerCase().includes(term))
+    if (!hit) return
+    setJumpId(hit.id)
+    const tScroll = setTimeout(() => {
+      const el = rootRef.current?.querySelector(`[data-block-id="${hit.id}"]`)
+      if (el) { try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }) } catch { /* ignore */ } }
+    }, 140)   // attende il montaggio della lista righe
+    const tClear = setTimeout(() => setJumpId(null), 2400)
+    return () => { clearTimeout(tScroll); clearTimeout(tClear) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpTo, vista.id])
 
   // imposta o rimuove la scadenza di una riga ('' = rimuovi)
   const setDue = (id, due) => {
@@ -1274,11 +1292,11 @@ ${rowsHtml}
               <span className="sel-count">{selected.size} sel.</span>
               <button className="pillbtn" title="Seleziona tutte le righe" onClick={selectAll}>☑ Tutte</button>
               <button className="pillbtn" title="Seleziona tutta la sezione (escluso il ramo padre)" onClick={selectSection}>⤵ Sezione</button>
+              <button className="pillbtn" title="Imposta la scadenza per le righe selezionate" onClick={() => setBulkDue(true)}>📅 Scadenza</button>
               <button className="pillbtn" title="Aumenta rientro" onClick={() => indentSelected(1)}>⇥</button>
               <button className="pillbtn" title="Riduci rientro" onClick={() => indentSelected(-1)}>⇤</button>
               <button className="pillbtn" title="Copia la sezione (mantiene i livelli)" onClick={copySection}>⧉ Copia</button>
               <button className="pillbtn" title="Taglia la sezione (va nel cestino)" onClick={cutSection}>✂ Taglia</button>
-              <button className="pillbtn" title="Imposta la scadenza per le righe selezionate" onClick={() => setBulkDue(true)}>📅 Scadenza</button>
               <button className="pillbtn" title="Incolla dopo la riga selezionata" onClick={pasteSection} disabled={!clipCount}>📌 Incolla{clipCount ? ` (${clipCount})` : ''}</button>
               <button className="pillbtn danger" title="Chiudi selezione" onClick={exitSelect}>✕</button>
             </>
@@ -1367,7 +1385,7 @@ ${rowsHtml}
         const di = b.due ? dueInfo(b.due) : null
         return (
         <div key={b.id} data-block-id={b.id} data-noswipe=""
-          className={'block' + (dragId === b.id ? ' dragging' : '') + (dropId === b.id ? ' drop-target' : '') + (indent ? ' nested' : '') + (isSel ? ' selected' : '') + (editing === b.id ? ' editing' : '') + (matchSet && !isHit ? ' search-dim' : '') + (isHit ? ' search-hit' : '') + (refFlash.has(bi) ? ' ref-flash' : '') + (di ? ' ' + di.cls : '')}
+          className={'block' + (dragId === b.id ? ' dragging' : '') + (dropId === b.id ? ' drop-target' : '') + (indent ? ' nested' : '') + (isSel ? ' selected' : '') + (editing === b.id ? ' editing' : '') + (matchSet && !isHit ? ' search-dim' : '') + (isHit ? ' search-hit' : '') + (refFlash.has(bi) ? ' ref-flash' : '') + (jumpId === b.id ? ' jump-flash' : '') + (di ? ' ' + di.cls : '')}
           draggable={editing !== b.id && (!selectMode || selected.has(b.id))}
           onDragStart={e => onDragStart(e, b.id)}
           onDragOver={e => onDragOver(e, b.id)}
@@ -1415,7 +1433,12 @@ ${rowsHtml}
                 }
                 if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); applyWrap(el, b.id, '**') }
                 else if ((e.ctrlKey || e.metaKey) && (e.key === 'i' || e.key === 'I')) { e.preventDefault(); applyWrap(el, b.id, '*') }
-                else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addBlock(b.id) }
+                else if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  // se ci sono collegamenti suggeriti, Invio conferma il primo invece di creare una riga
+                  if (suggestions.length) applyLink(suggestions[0])
+                  else addBlock(b.id)
+                }
                 else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditing(null) }
                 else if (e.key === 'Backspace' && b.text === '') { e.preventDefault(); deleteBlock(b.id) }
                 // frecce su/giù: se il cursore è al bordo della riga, salta alla riga adiacente
@@ -1445,9 +1468,9 @@ ${rowsHtml}
             {suggestions.length > 0 && (
               <div className="link-suggest" data-noswipe="">
                 <span className="link-suggest-lbl">Collega a:</span>
-                {suggestions.map(name => (
-                  <button key={name} type="button" className="link-suggest-chip"
-                    onMouseDown={e => e.preventDefault()} onClick={() => applyLink(name)}>🔗 {name}</button>
+                {suggestions.map((name, i) => (
+                  <button key={name} type="button" className={'link-suggest-chip' + (i === 0 ? ' first' : '')}
+                    onMouseDown={e => e.preventDefault()} onClick={() => applyLink(name)}>🔗 {name}{i === 0 ? ' ↵' : ''}</button>
                 ))}
               </div>
             )}

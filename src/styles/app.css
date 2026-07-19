@@ -614,6 +614,8 @@ a { color: var(--accent); text-decoration: none; }
   background: var(--panel); border: 1px solid var(--green-deep); color: var(--green-bright);
 }
 .link-suggest-chip:hover { background: var(--panel-2); border-color: var(--green-bright); }
+/* la prima chip è quella confermata con Invio: la evidenziamo un filo */
+.link-suggest-chip.first { background: color-mix(in srgb, var(--green-bright) 16%, var(--panel)); border-color: var(--green-bright); }
 
 /* ---------- Formule tipo Excel (righe che iniziano con =) ---------- */
 .formula-block {
@@ -636,6 +638,20 @@ a { color: var(--accent); text-decoration: none; }
 @keyframes ref-flash-pulse {
   0%   { background: color-mix(in srgb, var(--green-bright) 38%, transparent); }
   100% { background: color-mix(in srgb, var(--green-bright) 18%, transparent); }
+}
+
+/* Riga raggiunta arrivando da una ricerca fra viste (match nel testo): pulsa e resta
+   evidenziata qualche secondo, poi svanisce. */
+.block.jump-flash {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--green-bright) 15%, transparent);
+  box-shadow: 0 0 0 2px var(--green-bright) inset;
+  animation: jump-flash-pulse 2.4s ease-out;
+}
+@keyframes jump-flash-pulse {
+  0%   { background: color-mix(in srgb, var(--green-bright) 42%, transparent); }
+  70%  { background: color-mix(in srgb, var(--green-bright) 20%, transparent); }
+  100% { background: transparent; box-shadow: 0 0 0 2px transparent inset; }
 }
 
 /* ---------- Link web (URL) dentro le righe ---------- */

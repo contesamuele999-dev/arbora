@@ -37,6 +37,7 @@ export default function App() {
   const [links, setLinks] = useState([])
   const [vistaAperta, setVistaAperta] = useState(null)
   const [vistaStack, setVistaStack] = useState([])   // storia delle viste aperte via link/ricerca (per il tasto ←)
+  const [jumpText, setJumpText] = useState(null)     // termine cercato: la vista aperta scrolla alla riga che lo contiene
   const [focusMode, setFocusMode] = useState(false)
   const [page, setPage] = useState(null)       // 'privacy' | 'terms' | 'profile' | 'stats'
   const [guide, setGuide] = useState(null)     // sezione della guida
@@ -389,14 +390,17 @@ export default function App() {
   // Salva lo scroll di Pipe così, al ritorno, si riparte dallo stesso punto.
   const openFromList = (v) => {
     if (tab === 'pipe' && contentRef.current) pipeScrollRef.current = contentRef.current.scrollTop
-    setVistaStack([]); setVistaAperta(v)
+    setJumpText(null); setVistaStack([]); setVistaAperta(v)
   }
-  // naviga a un'altra vista da dentro l'editor (ricerca "vai a"): impila quella corrente
-  const pushVista = (v) => {
+  // naviga a un'altra vista da dentro l'editor (ricerca "vai a"): impila quella corrente.
+  // `term` (opzionale) = testo cercato: la vista aperta scrolla alla riga che lo contiene.
+  const pushVista = (v, term = null) => {
+    setJumpText(term || null)
     setVistaAperta(cur => { if (cur && cur.id !== v.id) setVistaStack(s => [...s, cur]); return v })
   }
   // tasto ← / back: se sei arrivato qui da un link torna alla vista precedente, altrimenti chiudi
   const closeVista = () => {
+    setJumpText(null)
     setVistaStack(s => {
       if (s.length) { setVistaAperta(s[s.length - 1]); return s.slice(0, -1) }
       setVistaAperta(null); return s
@@ -528,7 +532,7 @@ export default function App() {
           <button className="iconbtn" title="Focus" onClick={() => setFocusMode(f => !f)}>{focusMode ? '🔅' : '🎯'}</button>
         </div>
         <div className="content" onTouchStart={onEditorTouchStart} onTouchMove={onEditorTouchMove} onTouchEnd={onEditorTouchEnd}>
-          <Editor key={vistaAperta.id} vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} onSetStage={setStage} onClose={closeVista} />
+          <Editor key={vistaAperta.id} vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} onSetStage={setStage} onClose={closeVista} jumpTo={jumpText} />
         </div>
         <SwipeHint hint={swipeHint} />
         {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
@@ -715,7 +719,8 @@ function EditorVistaSearch({ viste, visioni, current, onOpen }) {
   }, [])
   useEffect(() => { setHi(0) }, [s])
 
-  const pick = (v) => { if (!v) return; onOpen(v); setQ(''); setOpen(false) }
+  // passa il termine cercato solo per i match nel testo (sc===1): la vista aperta scrolla alla riga trovata
+  const pick = (v, sc) => { if (!v) return; onOpen(v, sc === 1 ? s : null); setQ(''); setOpen(false) }
   const onKey = (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setHi(h => Math.min(results.length - 1, h + 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setHi(h => Math.max(0, h - 1)) }
@@ -723,7 +728,7 @@ function EditorVistaSearch({ viste, visioni, current, onOpen }) {
       // apre SEMPRE e solo la vista evidenziata (mai crearne una nuova)
       e.preventDefault(); e.stopPropagation()
       const target = results[hi] || results[0]
-      if (target) pick(target.v)   // results contiene {v, sc, same}: passa la vista, non il wrapper
+      if (target) pick(target.v, target.sc)   // results contiene {v, sc, same}: passa la vista, non il wrapper
     }
     else if (e.key === 'Escape') { e.stopPropagation(); setQ(''); setOpen(false); e.currentTarget.blur() }
   }
@@ -740,7 +745,7 @@ function EditorVistaSearch({ viste, visioni, current, onOpen }) {
           {results.length === 0 && <div className="editor-nav-empty">Nessuna vista trovata.</div>}
           {results.map((r, i) => (
             <button key={r.v.id} className={'editor-nav-item' + (i === hi ? ' hi' : '')}
-              onMouseEnter={() => setHi(i)} onClick={() => pick(r.v)}>
+              onMouseEnter={() => setHi(i)} onClick={() => pick(r.v, r.sc)}>
               <span className="editor-nav-title">{r.v.titolo || 'Senza titolo'}</span>
               <span className="editor-nav-vis">{visName(r.v.visione_id)}{r.sc === 1 ? ' · nel testo' : ''}</span>
             </button>
