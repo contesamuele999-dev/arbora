@@ -1208,7 +1208,8 @@ ${rowsHtml}
   const onEditorPointerDown = (e) => {
     if (!selectMode) return
     if (e.target.closest('.block') || e.target.closest('.editor-sticky') ||
-        e.target.closest('.view-search') || e.target.closest('.trash-panel')) return
+        e.target.closest('.view-search') || e.target.closest('.trash-panel') ||
+        e.target.closest('.due-scrim')) return   // il popup scadenza non deve deselezionare
     exitSelect()
   }
 
