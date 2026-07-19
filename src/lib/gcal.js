@@ -133,7 +133,8 @@ function eventBody(block, vistaTitle) {
   return {
     summary: plainTitle(block.text),
     description: 'Scadenza da Arbora' + (vistaTitle ? ' · ' + vistaTitle : ''),
-    colorId: '10',   // "Basil" — sfumatura di verde (coerente col tema Arbora)
+    colorId: '10',            // "Basil" — sfumatura di verde (coerente col tema Arbora)
+    transparency: 'transparent',  // "Disponibile" (non "Occupato"): non blocca Calendly & co.
     start: { date: day },
     end: { date: endStr },
     source: { title: 'Arbora', url: window.location.origin },
