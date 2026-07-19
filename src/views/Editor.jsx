@@ -1278,6 +1278,7 @@ ${rowsHtml}
               <button className="pillbtn" title="Riduci rientro" onClick={() => indentSelected(-1)}>⇤</button>
               <button className="pillbtn" title="Copia la sezione (mantiene i livelli)" onClick={copySection}>⧉ Copia</button>
               <button className="pillbtn" title="Taglia la sezione (va nel cestino)" onClick={cutSection}>✂ Taglia</button>
+              <button className="pillbtn" title="Imposta la scadenza per le righe selezionate" onClick={() => setBulkDue(true)}>📅 Scadenza</button>
               <button className="pillbtn" title="Incolla dopo la riga selezionata" onClick={pasteSection} disabled={!clipCount}>📌 Incolla{clipCount ? ` (${clipCount})` : ''}</button>
               <button className="pillbtn danger" title="Chiudi selezione" onClick={exitSelect}>✕</button>
             </>
