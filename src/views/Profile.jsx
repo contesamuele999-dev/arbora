@@ -18,7 +18,15 @@ export default function Profile() {
     try {
       await gcal.connect(user?.id)
       setCalOn(true)
-      setMsg({ ok: true, text: 'Google Calendar collegato. Le righe con scadenza verranno sincronizzate.' })
+      setMsg({ ok: true, text: 'Google Calendar collegato. Sincronizzo le scadenze esistenti…' })
+      let n = 0
+      try { n = await gcal.syncAllPending() } catch { /* best-effort */ }
+      setMsg({
+        ok: true,
+        text: n > 0
+          ? `Google Calendar collegato. ${n} scadenz${n === 1 ? 'a esistente segnata' : 'e esistenti segnate'} sul calendario.`
+          : 'Google Calendar collegato. Le righe con scadenza verranno sincronizzate.',
+      })
     } catch (e) {
       setMsg({ ok: false, text: 'Collegamento non riuscito: ' + (e?.message || 'errore') })
     } finally { setCalBusy(false) }

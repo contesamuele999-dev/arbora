@@ -1535,7 +1535,7 @@ ${rowsHtml}
               onClick={() => { if (!selectMode) setDuePick(b.id) }}>⏰ {di.label}</span>
           )}
           {b.gcal && (
-            <span className="gcal-badge" title="Sincronizzato su Google Calendar">📅 sincronizzato</span>
+            <span className="gcal-badge" title="Sincronizzato su Google Calendar">📅</span>
           )}
           <span className={'copytap' + (flash === b.id ? ' copied-flash' : '')}>{flash === b.id ? 'copiato!' : ''}</span>
           {!selectMode && (

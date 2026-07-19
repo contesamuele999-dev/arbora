@@ -15,6 +15,8 @@
 // il token viene richiesto in silenzio senza ripetere il consenso.
 // ============================================================
 
+import { store } from './store.js'
+
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
 const SCOPE = 'https://www.googleapis.com/auth/calendar.events'
 const GSI_SRC = 'https://accounts.google.com/gsi/client'
@@ -131,6 +133,7 @@ function eventBody(block, vistaTitle) {
   return {
     summary: plainTitle(block.text),
     description: 'Scadenza da Arbora' + (vistaTitle ? ' · ' + vistaTitle : ''),
+    colorId: '10',   // "Basil" — sfumatura di verde (coerente col tema Arbora)
     start: { date: day },
     end: { date: endStr },
     source: { title: 'Arbora', url: window.location.origin },
@@ -157,6 +160,36 @@ export async function upsertEvent(block, vistaTitle) {
   if (!res.ok) throw new Error('Google Calendar ha risposto ' + res.status)
   const data = await res.json()
   return data.id
+}
+
+// Backfill: al collegamento, segna su Calendar tutte le righe con scadenza
+// già esistenti e non ancora sincronizzate (blocco con `due` ma senza `gcal`).
+// Salva l'eventId nel blocco e aggiorna la vista. Ritorna il numero di eventi creati.
+// Best-effort: un errore su una riga non blocca le altre.
+export async function syncAllPending() {
+  if (!hasGoogleCalendar || !isConnected()) return 0
+  const viste = await store.list('viste')
+  let created = 0
+  for (const v of viste) {
+    const blocchi = Array.isArray(v.blocchi) ? v.blocchi : []
+    let changed = false
+    const next = []
+    for (const b of blocchi) {
+      if (b?.due && !b.gcal) {
+        try {
+          const id = await upsertEvent(b, v.titolo)
+          next.push({ ...b, gcal: id })
+          created++; changed = true
+          continue
+        } catch { /* riga saltata: si ritenterà al prossimo cambio scadenza */ }
+      }
+      next.push(b)
+    }
+    if (changed) {
+      try { await store.update('viste', v.id, { blocchi: next }) } catch { /* ignore */ }
+    }
+  }
+  return created
 }
 
 // Elimina l'evento (ignora "già assente").
