@@ -48,6 +48,7 @@ export default function App() {
   const [theme, setTheme] = useState('foresta')
   const [themeOpen, setThemeOpen] = useState(false)
   const [preview, setPreview] = useState(null)
+  const [templatePick, setTemplatePick] = useState(false)   // modale "usa template"
   const [busy, setBusy] = useState('')
   const defaultVita = useRef(null)
   const stageWarned = useRef(false)
@@ -198,6 +199,45 @@ export default function App() {
         setLinks(ls => [...ls, lk])
       }
       if (open) setVistaAperta(v)
+    }})
+  }
+
+  // ---- Template ----
+  // Clona i blocchi con id nuovi (i template si copiano fra viste): conserva testo,
+  // rientro e immagini; scarta scadenze ed eventi Google Calendar (specifici dell'istanza).
+  const tuid = () => 'b-' + Math.random().toString(36).slice(2, 9)
+  const cloneBlocchi = (blocchi) => (blocchi || []).map(b => {
+    const n = { id: tuid(), text: b.text || '' }
+    if (b.indent) n.indent = b.indent
+    if (b.imgs) n.imgs = b.imgs
+    return n
+  })
+
+  // Salva la vista corrente come template (is_template: true), copiandone il contenuto.
+  const saveAsTemplate = ({ titolo, blocchi, visioneId }) => {
+    const vid = visioneId || vistaAperta?.visione_id || visioni[0]?.id
+    if (!vid) { alert('Crea prima una visione.'); return }
+    setPrompt({ titolo: 'Salva come template', label: 'Nome del template', valore: (titolo || 'Vista') + ' (template)', onOk: async (nome) => {
+      const t = await store.insert('viste', {
+        visione_id: vid, titolo: nome, blocchi: cloneBlocchi(blocchi),
+        is_template: true, livello: 0, parent_id: null, pos_x: 0, pos_y: 0, ordine: viste.length,
+      })
+      setViste(prev => [...prev, t])
+    }})
+  }
+
+  // Crea una nuova vista (normale) copiando i blocchi di un template.
+  const createFromTemplate = (template) => {
+    const vid = template.visione_id || visioni[0]?.id
+    if (!vid) { alert('Crea prima una visione.'); return }
+    setTemplatePick(false)
+    setPrompt({ titolo: 'Nuova vista da template', label: 'Titolo della vista', valore: '', onOk: async (nome) => {
+      const v = await store.insert('viste', {
+        visione_id: vid, titolo: nome, blocchi: cloneBlocchi(template.blocchi),
+        is_template: false, livello: 0, parent_id: null, pos_x: 0, pos_y: 0, ordine: viste.length,
+      })
+      setViste(prev => [...prev, v])
+      setVistaAperta(v)
     }})
   }
 
@@ -532,7 +572,7 @@ export default function App() {
           <button className="iconbtn" title="Focus" onClick={() => setFocusMode(f => !f)}>{focusMode ? '🔅' : '🎯'}</button>
         </div>
         <div className="content" onTouchStart={onEditorTouchStart} onTouchMove={onEditorTouchMove} onTouchEnd={onEditorTouchEnd}>
-          <Editor key={vistaAperta.id} vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} onSetStage={setStage} onClose={closeVista} jumpTo={jumpText} />
+          <Editor key={vistaAperta.id} vista={vistaAperta} onChange={saveVista} onWikilink={openByName} focusMode={focusMode} allViste={viste} onSetStage={setStage} onClose={closeVista} jumpTo={jumpText} onSaveTemplate={saveAsTemplate} />
         </div>
         <SwipeHint hint={swipeHint} />
         {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
@@ -557,6 +597,7 @@ export default function App() {
           })}
         </div>
         <div className="spacer" />
+        <button className="iconbtn" title="Usa un template per creare una nuova vista" onClick={() => setTemplatePick(true)}>🧩</button>
         <button className="iconbtn" title="Guida" onClick={() => setGuide(tab)}>?</button>
         <button className="iconbtn" onClick={() => setMenu(true)}>☰</button>
       </div>
@@ -611,6 +652,30 @@ export default function App() {
       {prompt && <NamePrompt data={prompt} onClose={() => setPrompt(null)} />}
       {confirm && <ConfirmModal data={confirm} onClose={() => setConfirm(null)} />}
       {guide && <GuideModal section={guide} onClose={() => setGuide(null)} />}
+
+      {templatePick && (() => {
+        const templates = viste.filter(v => v.is_template)
+        return (
+          <div className="modal-bg" onClick={() => setTemplatePick(false)}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+              <h3>Nuova vista da template</h3>
+              {templates.length ? (
+                <div className="template-list">
+                  {templates.map(t => (
+                    <button key={t.id} className="template-opt" onClick={() => createFromTemplate(t)}>
+                      <span className="template-name">🧩 {t.titolo || 'Senza titolo'}</span>
+                      <span className="template-meta">{(t.blocchi || []).length} righe · {visioni.find(x => x.id === t.visione_id)?.titolo || '—'}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p style={{color:'var(--text-dim)'}}>Nessun template ancora. Apri una vista e usa il pulsante 🧩 fra i modificatori di testo per salvarla come template.</p>
+              )}
+              <div className="row"><button className="btn" onClick={() => setTemplatePick(false)}>Chiudi</button></div>
+            </div>
+          </div>
+        )
+      })()}
 
       {themeOpen && (
         <div className="modal-bg" onClick={() => setThemeOpen(false)}>

@@ -93,7 +93,7 @@ function parseIndented(text, base = 0) {
 // Editor della singola VISTA: blocchi markdown, drag&drop (riordino + nidificazione),
 // click=modifica · doppio click=copia · icona cestino=elimina (con recupero 7 giorni),
 // selezione multipla + copia/taglia/incolla di sezioni intere, undo/redo.
-export default function Editor({ vista, onChange, onWikilink, focusMode, allViste = [], onSetStage, onClose, jumpTo }) {
+export default function Editor({ vista, onChange, onWikilink, focusMode, allViste = [], onSetStage, onClose, jumpTo, onSaveTemplate }) {
   const [stagePick, setStagePick] = useState(false)
   const [blocks, setBlocks] = useState(vista.blocchi?.length ? vista.blocchi : [{ id: uid(), text: '' }])
   const [title, setTitle] = useState(vista.titolo || '')
@@ -279,7 +279,12 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     const { blocks: b, title: t, trash: tr } = pending.current
     pending.current = null
     cacheVistaLocal(vista.id, { titolo: t, blocchi: b, cestino: tr })
-    onChange({ ...vista, blocchi: b, titolo: t, cestino: tr })
+    // IMPORTANTE: aggiorna anche l'indicatore. Senza questo, se si cambia scheda/app o si
+    // chiude la vista durante i 400ms di debounce, il salvataggio parte ma la clessidra ⏳
+    // resta "appesa" per sempre (sembrava bloccarsi ogni tanto).
+    Promise.resolve(onChange({ ...vista, blocchi: b, titolo: t, cestino: tr }))
+      .then(r => setSaveState(r === 'local' ? 'local' : 'saved'))
+      .catch(() => setSaveState('local'))
   }, [vista, onChange])
 
   useEffect(() => {
@@ -781,12 +786,26 @@ ${rowsHtml}
 
   // trascina sopra più caselle ☑ per selezionarle/deselezionarle in blocco
   const selDrag = useRef(null)   // { adding: bool, touched: Set }
+  const selAnchor = useRef(null) // ultima casella toccata: ancora per la selezione a intervallo (Shift+click)
   const selDragOn = (id) => {
+    selAnchor.current = id
     setSelected(s => {
       const willAdd = !s.has(id)
       selDrag.current = { adding: willAdd, touched: new Set([id]) }
       const n = new Set(s); willAdd ? n.add(id) : n.delete(id); return n
     })
+  }
+  // Shift+click su una casella: seleziona tutte le righe dall'ancora (ultima casella
+  // toccata) fino a quella cliccata, comprese. L'ancora si sposta sulla riga cliccata.
+  const selectRange = (toId) => {
+    const from = selAnchor.current
+    const j = blocks.findIndex(b => b.id === toId)
+    const i = from ? blocks.findIndex(b => b.id === from) : -1
+    if (j < 0) return
+    if (i < 0) { selDragOn(toId); return }   // nessuna ancora: comportati come un click normale
+    const [a, z] = i <= j ? [i, j] : [j, i]
+    setSelected(s => { const n = new Set(s); for (let k = a; k <= z; k++) n.add(blocks[k].id); return n })
+    selAnchor.current = toId
   }
   const selDragEnter = (id) => {
     const d = selDrag.current
@@ -1308,6 +1327,13 @@ ${rowsHtml}
             const t = blocks.find(b=>b.id===id)?.text || ''
             setText(id, t + (t && !t.endsWith(' ') ? ' ' : '') + '((Nome della vista))')
           }}>🔗</button>
+          {onSaveTemplate && (
+            <button className="iconbtn" title="Salva questa vista come template (riutilizzabile per nuove viste)" onClick={() => {
+              flush()   // assicura che l'ultima modifica sia inclusa nel template
+              onSaveTemplate({ titolo: title, blocchi: blocks })
+              setToast('Template salvato'); setTimeout(() => setToast(''), 1500)
+            }}>🧩</button>
+          )}
         </div>
 
         {/* Riga azioni: copia foglio · selezione · incolla · cestino */}
@@ -1434,7 +1460,7 @@ ${rowsHtml}
           ))}
           {selectMode && (
             <span className={'sel-box' + (isSel ? ' on' : '')} data-block-id={b.id}
-              onPointerDown={e => { e.preventDefault(); selDragOn(b.id) }}
+              onPointerDown={e => { e.preventDefault(); if (e.shiftKey) selectRange(b.id); else selDragOn(b.id) }}
               onPointerEnter={() => { if (selDrag.current) selDragEnter(b.id) }}>{isSel ? '✓' : ''}</span>
           )}
           {editing === b.id ? (
