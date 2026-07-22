@@ -317,8 +317,10 @@ export default function App() {
   }
 
   const saveVista = async (updated) => {
-    // 1) mirror SINCRONO in locale: sopravvive a refresh/chiusura anche se il cloud fallisce
-    cacheVistaLocal(updated.id, { titolo: updated.titolo, blocchi: updated.blocchi, ...(updated.cestino !== undefined ? { cestino: updated.cestino } : {}) })
+    // 1) mirror SINCRONO in locale: sopravvive a refresh/chiusura anche se il cloud fallisce.
+    //    Registra anche la BASE (ultimo stato cloud noto) così un eventuale ri-flush di questa
+    //    entry dirty userà il merge a 3 vie e non resusciterà righe eliminate su un altro device.
+    cacheVistaLocal(updated.id, { titolo: updated.titolo, blocchi: updated.blocchi, ...(updated.cestino !== undefined ? { cestino: updated.cestino } : {}) }, baseBlocchi.current[updated.id])
     // 2) aggiornamento ottimistico della UI (aggiorna anche updated_at così Pipe
     //    riordina subito per modifica più recente, senza attendere il reload dal cloud)
     const nowIso = new Date().toISOString()
@@ -344,7 +346,7 @@ export default function App() {
     try {
       const saved = await store.updateVistaMerged(updated.id, patch, base)
       applyMerged(saved)
-      markVistaSynced(updated.id)
+      markVistaSynced(updated.id, baseBlocchi.current[updated.id])
       return 'cloud'
     } catch (e) {
       if (isMissingCestino(e) && updated.cestino !== undefined) {
@@ -352,7 +354,7 @@ export default function App() {
         try {
           const saved = await store.updateVistaMerged(updated.id, { titolo: updated.titolo, blocchi: updated.blocchi }, base)
           applyMerged(saved)
-          markVistaSynced(updated.id)   // testo salvato; il cestino resta in cache locale
+          markVistaSynced(updated.id, baseBlocchi.current[updated.id])   // testo salvato; il cestino resta in cache locale
           return 'cloud'
         } catch (e2) { console.warn('Salvataggio cloud fallito (conservato in locale):', e2) }
       } else {

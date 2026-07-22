@@ -6,6 +6,8 @@
 // Al reload i dati locali "dirty" (non ancora confermati dal cloud)
 // vengono uniti alle righe del server e ri-spediti.
 // ============================================================
+import { mergeBlocchi } from './store.js'
+
 const KEY = 'arbora-vista-cache'
 // Flag: la colonna `cestino` non esiste ancora su Supabase.
 const NO_CESTINO = 'arbora-no-cestino-col'
@@ -18,48 +20,72 @@ function write(obj) {
 }
 
 // Scrive (sincrono) le modifiche di una vista nella cache, marcandola "dirty".
-export function cacheVistaLocal(id, patch) {
+// `base` = stato cloud da cui è partita questa modifica (per il merge a 3 vie).
+// Serve a distinguere una riga NUOVA di qui da una riga ELIMINATA altrove: senza
+// base il flush sarebbe "additivo" e resusciterebbe le righe cancellate su un altro
+// dispositivo. La base va impostata solo da chi la conosce davvero (saveVista);
+// le scritture sincrone anti-perdita (Editor a ogni battuta) la lasciano invariata.
+export function cacheVistaLocal(id, patch, base) {
   if (!id) return
   const db = read()
-  db[id] = { ...(db[id] || {}), ...patch, ts: Date.now(), dirty: true }
+  const prev = db[id] || {}
+  db[id] = { ...prev, ...patch, ts: Date.now(), dirty: true }
+  if (base !== undefined) db[id].base = base
   write(db)
 }
 
 // Segna una vista come sincronizzata col cloud (non più dirty).
-export function markVistaSynced(id) {
+// `syncedBlocchi` (opzionale) = risultato del merge appena salvato: diventa la nuova base.
+export function markVistaSynced(id, syncedBlocchi) {
   const db = read()
-  if (db[id]) { db[id].dirty = false; write(db) }
+  if (db[id]) {
+    db[id].dirty = false
+    if (Array.isArray(syncedBlocchi)) db[id].base = syncedBlocchi
+    write(db)
+  }
 }
 
-// Unisce le righe del server con la cache locale:
-// se la cache ha una versione dirty (non confermata), vince quella.
+// Unisce le righe del server con la cache locale. Se la cache ha una versione dirty
+// (non confermata), si fonde a 3 vie con la base salvata: così le modifiche locali non
+// ancora salite restano, MA le eliminazioni fatte su un altro dispositivo vengono
+// comunque applicate (prima la cache dirty "vinceva" tutto e nascondeva le eliminazioni).
 export function mergeVisteWithCache(rows) {
   const db = read()
   if (!Object.keys(db).length) return rows
   return rows.map(r => {
     const c = db[r.id]
     if (!c || !c.dirty) return r
-    const out = { ...r, titolo: c.titolo ?? r.titolo, blocchi: c.blocchi ?? r.blocchi }
+    const localBlocchi = c.blocchi ?? r.blocchi
+    const blocchi = c.base !== undefined
+      ? mergeBlocchi(c.base, localBlocchi, r.blocchi)   // fonde edit locali + eliminazioni remote
+      : localBlocchi                                     // nessuna base nota: fallback al comportamento precedente
+    const out = { ...r, titolo: c.titolo ?? r.titolo, blocchi }
     if (c.cestino !== undefined) out.cestino = c.cestino
     return out
   })
 }
 
 // Ri-spedisce al cloud tutte le viste rimaste "dirty" (best-effort).
+// Usa il merge a 3 vie (updateVistaMerged) invece di una sovrascrittura piena, così
+// una entry dirty vecchia non cancella le modifiche/eliminazioni fatte altrove.
 export async function flushDirtyToCloud(store) {
   const db = read()
   const ids = Object.keys(db).filter(id => db[id]?.dirty)
   for (const id of ids) {
     const c = db[id]
+    const base = c.base   // può essere undefined su entry vecchie: updateVistaMerged degrada in modo sicuro
     try {
       const patch = { titolo: c.titolo, blocchi: c.blocchi }
       if (c.cestino !== undefined && !cestinoDisabled()) patch.cestino = c.cestino
-      await store.update('viste', id, patch)
-      markVistaSynced(id)
+      const saved = await store.updateVistaMerged(id, patch, base)
+      markVistaSynced(id, saved?.blocchi)
     } catch (e) {
       if (isMissingCestino(e) && c.cestino !== undefined) {
         disableCestinoCloud()
-        try { await store.update('viste', id, { titolo: c.titolo, blocchi: c.blocchi }); markVistaSynced(id) } catch { /* ritenta al prossimo reload */ }
+        try {
+          const saved = await store.updateVistaMerged(id, { titolo: c.titolo, blocchi: c.blocchi }, base)
+          markVistaSynced(id, saved?.blocchi)
+        } catch { /* ritenta al prossimo reload */ }
       }
       /* se fallisce resta dirty: ritenteremo più avanti */
     }
