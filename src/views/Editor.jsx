@@ -1221,8 +1221,17 @@ ${rowsHtml}
   }, [sq, blocks])
   const matchCount = matchSet ? matchSet.size : 0
 
-  // auto-altezza della textarea: cresce col contenuto (anche con testo mandato a capo)
-  const autosize = (el) => { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }
+  // auto-altezza della textarea: cresce col contenuto (anche con testo mandato a capo) così
+  // si vede TUTTO il testo della riga in un colpo solo. Con box-sizing:border-box lo
+  // scrollHeight non comprende i bordi: li aggiungiamo, altrimenti l'ultima riga verrebbe
+  // tagliata di un paio di px.
+  const autosize = (el) => {
+    if (!el) return
+    el.style.height = 'auto'
+    const cs = window.getComputedStyle(el)
+    const border = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
+    el.style.height = (el.scrollHeight + border) + 'px'
+  }
 
   // Alla comparsa della textarea la misura fatta nel ref/onChange può essere imprecisa
   // (larghezza non ancora assestata, font non caricato, tastiera mobile che cambia il viewport):

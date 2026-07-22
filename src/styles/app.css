@@ -293,7 +293,10 @@ a { color: var(--accent); text-decoration: none; }
 .handle:active { cursor: grabbing; }
 .block .rendered { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.6; cursor: text; min-height: 1.6em; touch-action: pan-y; }
 .block textarea {
-  flex: 1; min-width: 0; width: 100%; background: var(--bg-2); border: 1px solid var(--green-deep); border-radius: 8px;
+  /* flex:0 0 auto (NON flex:1): dentro .row-edit (flex column) un flex-basis:0 farebbe
+     prevalere il flex sull'altezza impostata da autosize, bloccando la casella a min-height
+     e tagliando il testo. Così invece la casella cresce fino a mostrare tutta la riga. */
+  flex: 0 0 auto; min-width: 0; width: 100%; background: var(--bg-2); border: 1px solid var(--green-deep); border-radius: 8px;
   color: var(--text); font: inherit; padding: 8px 10px; resize: vertical; overflow: hidden; outline: none;
   line-height: 1.6; min-height: 2.6em; box-sizing: border-box;
   /* il testo va SEMPRE a capo: la casella cresce in altezza (autosize JS) e si vede
