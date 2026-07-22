@@ -1224,6 +1224,28 @@ ${rowsHtml}
   // auto-altezza della textarea: cresce col contenuto (anche con testo mandato a capo)
   const autosize = (el) => { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }
 
+  // Alla comparsa della textarea la misura fatta nel ref/onChange può essere imprecisa
+  // (larghezza non ancora assestata, font non caricato, tastiera mobile che cambia il viewport):
+  // il testo lungo resterebbe tagliato. Ri-misuriamo l'altezza DOPO il layout, ad ogni apertura
+  // dell'editing e quando la finestra/tastiera cambia dimensione, così si vede sempre tutto.
+  useEffect(() => {
+    if (!editing) return
+    const fit = () => autosize(editRef.current)
+    fit()
+    const r1 = requestAnimationFrame(fit)
+    const r2 = requestAnimationFrame(() => requestAnimationFrame(fit))   // dopo il caricamento del font/layout
+    const vv = window.visualViewport
+    window.addEventListener('resize', fit)
+    vv?.addEventListener('resize', fit)
+    document.fonts?.ready?.then(fit).catch(() => {})
+    return () => {
+      cancelAnimationFrame(r1); cancelAnimationFrame(r2)
+      window.removeEventListener('resize', fit)
+      vv?.removeEventListener('resize', fit)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing])
+
   // ---- guide di nidificazione CONTINUE (stile albero: │ ├ └ ) ----
   // Per ogni riga calcola, colonna per colonna, se disegnare una linea verticale di
   // passaggio ('line'), niente ('space'), un connettore intermedio ('tee' = ├) o
