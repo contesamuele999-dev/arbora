@@ -56,6 +56,11 @@ export default function App() {
   const contentRef = useRef(null)       // contenitore scrollabile delle schede (Pipe/Tree/…)
   const pipeScrollRef = useRef(0)       // scroll di Pipe salvato all'apertura di una vista, ripristinato al ritorno
   const baseBlocchi = useRef({})        // { vistaId: blocchi } = ultimo stato cloud noto, per il merge multi-dispositivo
+  // Visione di SISTEMA che raccoglie i template: nascosta ovunque (griglia, mappa, elenco).
+  // Serve perché nello schema ogni template deve avere una visione: così i template
+  // sopravvivono anche se elimini TUTTE le visioni reali.
+  const TEMPLATE_VIS = '__templates__'
+  const templateVis = useRef(null)      // riga della visione-contenitore template (o null se non esiste ancora)
 
   const reload = useCallback(async () => {
     // resiliente: se una singola query fallisce non azzeriamo tutta l'app
@@ -64,7 +69,10 @@ export default function App() {
       safe(store.list('vite')), safe(store.list('visioni')), safe(store.list('viste')), safe(store.list('links')),
     ])
     defaultVita.current = vt[0] || null
-    setVisioni(vs)
+    // separa la visione-contenitore dei template dalle visioni reali (mostrate all'utente)
+    templateVis.current = vs.find(v => v.titolo === TEMPLATE_VIS) || null
+    const visReali = vs.filter(v => v.titolo !== TEMPLATE_VIS)
+    setVisioni(visReali)
     // istantanea dello stato cloud: base per il merge a 3 vie al prossimo salvataggio
     baseBlocchi.current = Object.fromEntries(allViste.map(v => [v.id, v.blocchi || []]))
     const merged = mergeVisteWithCache(allViste)   // ripristina modifiche locali non ancora confermate
@@ -200,6 +208,17 @@ export default function App() {
     return v
   }
 
+  // Ritorna (creandola se serve) la visione di SISTEMA che contiene i template.
+  // È nascosta ovunque: esiste solo per dare una `visione_id` valida ai template, così
+  // sopravvivono anche quando l'utente elimina tutte le sue visioni reali.
+  const ensureTemplateVisione = async () => {
+    if (templateVis.current) return templateVis.current
+    const vita = await ensureVita()
+    const v = await store.insert('visioni', { vita_id: vita.id, titolo: TEMPLATE_VIS, colore: '#888888', ordine: 9999 })
+    templateVis.current = v
+    return v
+  }
+
   const addVisione = () => {
     setPrompt({ titolo: 'Nuova visione', label: 'Nome della visione', valore: '', onOk: async (nome) => {
       const vita = await ensureVita()
@@ -238,12 +257,13 @@ export default function App() {
   })
 
   // Salva la vista corrente come template (is_template: true), copiandone il contenuto.
-  const saveAsTemplate = ({ titolo, blocchi, visioneId }) => {
-    const vid = visioneId || vistaAperta?.visione_id || visioni[0]?.id
-    if (!vid) { alert('Crea prima una visione.'); return }
+  // Il template va nella visione di SISTEMA nascosta, così è indipendente dalle visioni
+  // reali e non viene mai eliminato insieme a una di esse.
+  const saveAsTemplate = ({ titolo, blocchi }) => {
     setPrompt({ titolo: 'Salva come template', label: 'Nome del template', valore: (titolo || 'Vista') + ' (template)', onOk: async (nome) => {
+      const contenitore = await ensureTemplateVisione()
       const t = await store.insert('viste', {
-        visione_id: vid, titolo: nome, blocchi: cloneBlocchi(blocchi),
+        visione_id: contenitore.id, titolo: nome, blocchi: cloneBlocchi(blocchi),
         is_template: true, livello: 0, parent_id: null, pos_x: 0, pos_y: 0, ordine: viste.length,
       })
       setViste(prev => [...prev, t])
@@ -251,8 +271,10 @@ export default function App() {
   }
 
   // Crea una nuova vista (normale) copiando i blocchi di un template.
+  // La nuova vista va in una visione REALE (non nel contenitore nascosto dei template):
+  // usiamo la visione aperta se disponibile, altrimenti la prima visione reale.
   const createFromTemplate = (template) => {
-    const vid = template.visione_id || visioni[0]?.id
+    const vid = vistaAperta?.visione_id || visioni[0]?.id
     if (!vid) { alert('Crea prima una visione.'); return }
     setTemplatePick(false)
     setPrompt({ titolo: 'Nuova vista da template', label: 'Titolo della vista', valore: '', onOk: async (nome) => {
@@ -317,22 +339,41 @@ export default function App() {
   }
 
   const deleteVisione = (vis) => {
-    const mie = viste.filter(v => v.visione_id === vis.id)
+    // I template esistono INDIPENDENTEMENTE dalle visioni: eliminando una visione NON
+    // vanno cancellati. Le viste reali si eliminano; i template (nuovi già nella visione
+    // di sistema, oppure vecchi ancora dentro questa visione) vengono spostati/tenuti nel
+    // contenitore nascosto, così sopravvivono anche eliminando TUTTE le visioni.
+    const mie = viste.filter(v => v.visione_id === vis.id && !v.is_template)   // viste reali
+    const mieiTemplate = viste.filter(v => v.visione_id === vis.id && v.is_template)   // template "vecchi" ancora qui
     const mieIds = new Set(mie.map(v => v.id))
     setConfirm({
       titolo: 'Eliminare la visione?',
-      messaggio: mie.length
+      messaggio: (mie.length
         ? `"${vis.titolo}" e le sue ${mie.length} vist${mie.length === 1 ? 'a' : 'e'} verranno eliminate definitivamente.`
-        : `"${vis.titolo}" verrà eliminata definitivamente.`,
-      okLabel: 'Elimina tutto',
+        : `"${vis.titolo}" verrà eliminata definitivamente.`)
+        + (mieiTemplate.length ? ` I ${mieiTemplate.length} template al suo interno verranno conservati.` : ''),
+      okLabel: 'Elimina',
       onOk: async () => {
         const badLinks = links.filter(l => mieIds.has(l.da_vista) || mieIds.has(l.a_vista)).map(l => l.id)
         try {
-          await store.remove('visioni', vis.id)          // cloud: cascade su viste e links
-          for (const v of mie) { try { await store.remove('viste', v.id) } catch {} }   // demo/cleanup
+          // 1) metti al sicuro i template ancora dentro questa visione: spostali nel
+          //    contenitore di sistema PRIMA di eliminare, così il cascade cloud non li tocca.
+          let rifugioId = null
+          if (mieiTemplate.length) {
+            const contenitore = await ensureTemplateVisione()
+            rifugioId = contenitore.id
+            for (const t of mieiTemplate) { try { await store.update('viste', t.id, { visione_id: rifugioId }) } catch {} }
+          }
+          // 2) elimina solo le viste reali
+          for (const v of mie) { try { await store.remove('viste', v.id) } catch {} }
           for (const lid of badLinks) { try { await store.remove('links', lid) } catch {} }
+          // 3) elimina la visione
+          await store.remove('visioni', vis.id)
+          const rid = rifugioId
+          setViste(vs => vs
+            .filter(v => !mieIds.has(v.id))                                                  // togli le viste reali eliminate
+            .map(v => (rid && v.visione_id === vis.id && v.is_template) ? { ...v, visione_id: rid } : v))  // sposta i template
         } catch (e) { alert('Errore eliminazione: ' + (e?.message || e)); return }
-        setViste(vs => vs.filter(v => v.visione_id !== vis.id))
         setVisioni(vs => vs.filter(v => v.id !== vis.id))
         setLinks(ls => ls.filter(l => !mieIds.has(l.da_vista) && !mieIds.has(l.a_vista)))
         if (vistaAperta && mieIds.has(vistaAperta.id)) setVistaAperta(null)
@@ -690,7 +731,7 @@ export default function App() {
                   {templates.map(t => (
                     <button key={t.id} className="template-opt" onClick={() => createFromTemplate(t)}>
                       <span className="template-name">🧩 {t.titolo || 'Senza titolo'}</span>
-                      <span className="template-meta">{(t.blocchi || []).length} righe · {visioni.find(x => x.id === t.visione_id)?.titolo || '—'}</span>
+                      <span className="template-meta">{(t.blocchi || []).length} righe</span>
                     </button>
                   ))}
                 </div>
