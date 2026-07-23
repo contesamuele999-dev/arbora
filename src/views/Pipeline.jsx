@@ -61,7 +61,7 @@ export default function Pipeline({ visioni, viste, query: queryProp, onQueryChan
   // (titolo > contenuto), poi a parità le fissate/più recenti.
   const sezioni = useMemo(() => {
     let out = visioni.map(vis => {
-      const mie = viste.filter(v => v.visione_id === vis.id)
+      const mie = viste.filter(v => v.visione_id === vis.id && !v.is_template)
       const visMatch = q && (vis.titolo || '').toLowerCase().includes(q)
       let list = mie.map(v => ({ v, s: scoreVista(v) }))
       if (q) list = list.filter(x => x.s > 0 || visMatch)

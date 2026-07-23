@@ -77,6 +77,30 @@ export default function App() {
   useEffect(() => { setTheme(loadTheme()) }, [])
   useEffect(() => { if (user) reload() }, [user, reload])
 
+  // Sync cross-dispositivo: quando l'app torna in primo piano (cambio scheda, sblocco
+  // schermo, ritorno da un'altra app) rileggiamo dal cloud, così le modifiche fatte su un
+  // ALTRO dispositivo compaiono qui. Il reload fonde con la cache locale (mergeVisteWithCache)
+  // e ri-spedisce le modifiche non ancora salvate, quindi non perde il lavoro locale.
+  // Evitiamo di ricaricare mentre una vista è aperta in modifica (per non disturbare
+  // l'editing) e non più spesso di una volta ogni 4 secondi.
+  const lastReload = useRef(0)
+  useEffect(() => {
+    if (!user) return
+    const maybeReload = () => {
+      if (document.visibilityState !== 'visible') return
+      if (vistaAperta) return                     // vista aperta: non disturbare l'editing
+      if (Date.now() - lastReload.current < 4000) return
+      lastReload.current = Date.now()
+      reload()
+    }
+    window.addEventListener('visibilitychange', maybeReload)
+    window.addEventListener('focus', maybeReload)
+    return () => {
+      window.removeEventListener('visibilitychange', maybeReload)
+      window.removeEventListener('focus', maybeReload)
+    }
+  }, [user, reload, vistaAperta])
+
   // ripristina lo scroll di Pipe quando si chiude una vista e si torna all'elenco
   useLayoutEffect(() => {
     if (!vistaAperta && !page && tab === 'pipe' && contentRef.current) {

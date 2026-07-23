@@ -305,9 +305,17 @@ export default function Editor({ vista, onChange, onWikilink, focusMode, allVist
     if (!dragId) return
     const onOver = (e) => { if (e.clientX || e.clientY) setGhost(g => g ? { ...g, x: e.clientX, y: e.clientY } : g) }
     document.addEventListener('dragover', onOver)
-    // durante il trascinamento consenti di scorrere la lista con la rotellina del mouse
-    const scroller = rootRef.current?.closest('.content') || document.scrollingElement
-    const onWheel = (e) => { if (scroller) { e.preventDefault(); scroller.scrollTop += e.deltaY } }
+    // durante il trascinamento consenti di scorrere la lista con la rotellina del mouse.
+    // Il contenitore scrollabile è `.content` (l'editor sta dentro), con fallback all'elemento
+    // di scroll del documento. Aggiorniamo lo scroll sia sul contenitore sia sul window,
+    // perché a seconda del layout può scorrere l'uno o l'altro.
+    const scroller = rootRef.current?.closest('.content') || document.scrollingElement || document.documentElement
+    const onWheel = (e) => {
+      e.preventDefault()
+      const dy = e.deltaY
+      if (scroller) scroller.scrollTop += dy
+      window.scrollBy(0, dy)
+    }
     window.addEventListener('wheel', onWheel, { passive: false })
     return () => { document.removeEventListener('dragover', onOver); window.removeEventListener('wheel', onWheel) }
   }, [dragId])
@@ -738,10 +746,10 @@ ${rowsHtml}
   const activateBlock = (b, e) => {
     if (rowJustHandled.current) { rowJustHandled.current = false; return }  // veniamo da un drag/swipe della riga
     const cx = e?.clientX, cy = e?.clientY   // dove hai premuto (per il caret all'apertura)
-    // Shift+click in selezione (da PC) = seleziona l'intera sezione (blocco + figli)
+    // Shift+click in selezione (da PC) = seleziona l'INTERVALLO dalla riga ancora (ultima
+    // toccata) fino a questa, comprese. Se non c'è un'ancora, seleziona solo questa riga.
     if (selectMode && e?.shiftKey) {
-      const sec = sectionIdsOf(b)
-      setSelected(s => { const n = new Set(s); sec.forEach(id => n.add(id)); return n })
+      selectRange(b.id)
       return
     }
     const tr = tapRef.current
@@ -758,6 +766,7 @@ ${rowsHtml}
         return
       }
       toggleSelect(b.id)   // il toggle è reversibile: 1° tocco seleziona, 2° deseleziona, 3° esce
+      selAnchor.current = b.id   // aggiorna l'ancora: un successivo Shift+click seleziona l'intervallo fin qui
       clickTimer.current = setTimeout(() => { tr.id = null; tr.n = 0 }, TAP_MS)
       return
     }
@@ -766,6 +775,7 @@ ${rowsHtml}
     if (tr.n >= 3) {
       tr.n = 0; tr.id = null; clickTimer.current = null
       setEditing(null); setSelectMode(true); setSelected(new Set([b.id]))
+      selAnchor.current = b.id
       try { navigator.vibrate?.(12) } catch { /* ignore */ }
       return
     }
@@ -887,14 +897,41 @@ ${rowsHtml}
     if (!sel.every(b => sec.has(b.id))) return null   // la selezione esce dalla sezione: non è "una sola sezione"
     return { parent, sec }
   }
+  // Ramo PADRE che contiene il blocco `b` (titolo di livello superiore, oppure
+  // primo antenato con rientro minore). Null se `b` è già a livello radice.
+  const parentOf = (b) => {
+    const i = blocks.findIndex(x => x.id === b.id)
+    if (i < 0) return null
+    const myLevel = b.indent || 0
+    for (let k = i - 1; k >= 0; k--) {
+      if (headingLevel(blocks[k].text) > 0) return blocks[k]
+      if ((blocks[k].indent || 0) < myLevel) return blocks[k]
+    }
+    return null
+  }
   // ⤵ Sezione / Ctrl+S: se la selezione è dentro una sola sezione, seleziona TUTTA la
-  // sezione escluso il ramo padre; altrimenti estende ogni riga alla propria sezione.
+  // sezione escluso il ramo padre. Con più righe (o righe di sezioni diverse), estende
+  // OGNI riga selezionata all'intera sezione che la contiene (padre + fratelli + discendenti),
+  // così "⤵ Sezione" funziona anche con una selezione multipla sparsa.
   const selectSection = () => {
     const info = singleSectionParent()
     if (info) {
       const ids = new Set(info.sec)
       ids.delete(info.parent.id)                 // escludi il ramo padre
       if (ids.size) { setSelected(ids); return }
+    }
+    // fallback multi-sezione: per ogni riga selezionata risali al padre e prendi la
+    // sua intera sezione (escluso il padre stesso). Se non c'è padre, espandi il sotto-albero.
+    const sel = selectedInOrder()
+    if (sel.length > 1) {
+      const ids = new Set(selected)
+      for (const b of sel) {
+        const p = parentOf(b)
+        if (p) { const sec = sectionIdsOf(p); sec.forEach(id => { if (id !== p.id) ids.add(id) }) }
+        else sectionIdsOf(b).forEach(id => ids.add(id))
+      }
+      setSelected(ids)
+      return
     }
     expandToSection()
   }
@@ -1044,7 +1081,8 @@ ${rowsHtml}
     const d = {
       id: b.id, el, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY,
       lastX: e.clientX, lastY: e.clientY, startIndent: b.indent || 0, text: b.text,
-      active: false, over: null,
+      active: false, over: null, scrolling: false,
+      scroller: rootRef.current?.closest('.content') || document.scrollingElement,
     }
     d.timer = setTimeout(() => {
       d.active = true
@@ -1063,14 +1101,34 @@ ${rowsHtml}
       if (!d.fired && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 12) clearTimeout(d.timer)
       return
     }
+    const prevY = d.lastY
     d.lastX = e.clientX; d.lastY = e.clientY
     if (!d.active) {
-      // prima del long-press: se il dito si muove troppo è uno scroll/swipe → annulla il timer
-      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 12) { clearTimeout(d.timer); d.timedOut = true }
+      // prima del long-press: se il dito si muove troppo è uno scroll/swipe → annulla il timer.
+      // Poiché la riga ha touch-action:none (per rendere affidabile il long-press-drag su
+      // tablet), il browser non scorre più la lista da solo: lo facciamo noi a mano finché
+      // il gesto resta un semplice scroll verticale.
+      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 12) {
+        clearTimeout(d.timer); d.timedOut = true
+        const dx = Math.abs(e.clientX - d.sx), dy = Math.abs(e.clientY - d.sy)
+        if (dy > dx && !d.scrolling) {
+          d.scrolling = true   // gesto verticale → è uno scroll della lista
+          try { d.el.setPointerCapture?.(d.pointerId) } catch { /* ignore */ }
+        }
+      }
+      if (d.scrolling && d.scroller) { e.preventDefault(); d.scroller.scrollTop -= (e.clientY - prevY) }
       return
     }
     e.preventDefault()
     setGhost(g => (g ? { ...g, x: e.clientX, y: e.clientY } : g))
+    // auto-scroll quando il dito/pennino è vicino al bordo alto/basso dello schermo,
+    // così si può trascinare una riga oltre la porzione di lista visibile (utile su tablet)
+    const scroller = rootRef.current?.closest('.content') || document.scrollingElement
+    if (scroller) {
+      const EDGE = 70, SPEED = 14
+      if (e.clientY < EDGE) scroller.scrollTop -= SPEED
+      else if (e.clientY > window.innerHeight - EDGE) scroller.scrollTop += SPEED
+    }
     const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.block')
     const overId = el?.getAttribute('data-block-id')
     if (overId && overId !== d.id) { d.over = overId; setDropId(overId) }
@@ -1081,6 +1139,7 @@ ${rowsHtml}
     if (!d) return
     clearTimeout(d.timer); rowDrag.current = null
     if (d.sel) return   // long-press in selezione: gestito dal timer; il click fa il toggle normale
+    if (d.scrolling) { rowJustHandled.current = true; return }   // era uno scroll della lista, non un tap
     const dx = (e.clientX ?? d.lastX) - d.sx
     const dy = (e.clientY ?? d.lastY) - d.sy
     if (!d.active) {
@@ -1385,8 +1444,6 @@ ${rowsHtml}
               <button className="pillbtn" title="Seleziona tutte le righe" onClick={selectAll}>☑ Tutte</button>
               <button className="pillbtn" title="Seleziona tutta la sezione (escluso il ramo padre)" onClick={selectSection}>⤵ Sezione</button>
               <button className="pillbtn" title="Imposta la scadenza per le righe selezionate" onClick={() => setBulkDue(true)}>📅 Scadenza</button>
-              <button className="pillbtn" title="Aumenta rientro" onClick={() => indentSelected(1)}>⇥</button>
-              <button className="pillbtn" title="Riduci rientro" onClick={() => indentSelected(-1)}>⇤</button>
               <button className="pillbtn" title="Copia la sezione (mantiene i livelli)" onClick={copySection}>⧉ Copia</button>
               <button className="pillbtn" title="Taglia la sezione (va nel cestino)" onClick={cutSection}>✂ Taglia</button>
               <button className="pillbtn" title="Incolla dopo la riga selezionata" onClick={pasteSection} disabled={!clipCount}>📌 Incolla{clipCount ? ` (${clipCount})` : ''}</button>
